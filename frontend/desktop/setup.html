@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Server connection | Agrivit Cashier</title>
+    <link rel="stylesheet" href="/setup.css" />
+    <script src="/setup.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <p class="brand">Agrivit Cashier</p>
+      <h1>Server connection</h1>
+      <p>Connect to your store’s Laravel server to sign in and download the product catalog.</p>
+      <form>
+        <label for="server">Laravel server URL</label>
+        <input id="server" type="url" placeholder="https://pos.example.com" required autocomplete="url" />
+        <div class="actions">
+          <button type="submit">Save and connect</button>
+          <a href="/" hidden>Back to register</a>
+        </div>
+        <p class="error" role="alert" hidden></p>
+      </form>
+    </main>
+  </body>
+</html>

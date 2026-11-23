@@ -1,0 +1,8 @@
+/.env
+/.env.*
+!/.env.example
+/vendor/
+/database/*.sqlite*
+/bootstrap/cache/*.php
+/storage/logs/*.log
+/storage/app/private/backups/

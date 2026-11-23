@@ -1,0 +1,346 @@
+{
+  "share_capital_settings": [
+    {
+      "id": "cap-policy-1",
+      "required_initial_capital": 5000,
+      "currency": "PHP",
+      "effective_from": "2026-01-01"
+    }
+  ],
+  "categories": [
+    {
+      "id": "cat-fert",
+      "name": "Fertilizers & Soil",
+      "parent_id": null
+    },
+    {
+      "id": "cat-seed",
+      "name": "Seeds & Planting",
+      "parent_id": null
+    },
+    {
+      "id": "cat-feed",
+      "name": "Livestock Feed",
+      "parent_id": null
+    },
+    {
+      "id": "cat-tool",
+      "name": "Crop Care & Inputs",
+      "parent_id": null
+    }
+  ],
+  "suppliers": [
+    {
+      "id": "sup-1",
+      "name": "Luzon AgriChem Supply Corp.",
+      "contact_details": "supply@luzonagrichem.ph · +63 2 8842 1900"
+    },
+    {
+      "id": "sup-2",
+      "name": "Central Plains Seed Growers",
+      "contact_details": "orders@centralplainsseeds.ph · +63 44 463 8821"
+    }
+  ],
+  "pos_terminals": [
+    {
+      "id": "TERMINAL-001",
+      "terminal_code": "TERMINAL-001",
+      "location_name": "Front Counter 1 (Main Warehouse)",
+      "status": "active",
+      "last_sync_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "TERMINAL-002",
+      "terminal_code": "TERMINAL-002",
+      "location_name": "Android Field POS Unit",
+      "status": "active",
+      "last_sync_at": "2026-11-10T08:00:00.000Z"
+    }
+  ],
+  "loan_settings": [
+    {
+      "id": "loan-policy-1",
+      "capital_multiplier": 6,
+      "interest_rate": 0.06,
+      "default_term_months": 6,
+      "waiting_period_days": 7
+    }
+  ],
+  "roles": [
+    {
+      "id": "role-admin",
+      "name": "admin",
+      "description": "Full system administration, user provisioning, impersonation, and policy settings"
+    },
+    {
+      "id": "role-manager",
+      "name": "manager",
+      "description": "Cooperative operations manager: membership, inventory, loans, sync conflicts, and reports"
+    },
+    {
+      "id": "role-cashier",
+      "name": "cashier",
+      "description": "POS terminal checkout, offline outbox sync, returns, and pre-order fulfillment"
+    },
+    {
+      "id": "role-shareholder",
+      "name": "shareholder",
+      "description": "Online storefront pre-orders, membership verification, share capital, and loans"
+    }
+  ],
+  "permissions": [
+    {
+      "id": "perm-users-manage",
+      "name": "users.manage",
+      "module": "identity"
+    },
+    {
+      "id": "perm-impersonate",
+      "name": "admin.impersonate",
+      "module": "identity"
+    },
+    {
+      "id": "perm-settings-manage",
+      "name": "settings.manage",
+      "module": "admin"
+    },
+    {
+      "id": "perm-shareholders-review",
+      "name": "shareholders.review",
+      "module": "shareholders"
+    },
+    {
+      "id": "perm-inventory-write",
+      "name": "inventory.write",
+      "module": "inventory"
+    },
+    {
+      "id": "perm-pos-operate",
+      "name": "pos.operate",
+      "module": "pos"
+    },
+    {
+      "id": "perm-sync-push",
+      "name": "sync.push",
+      "module": "sync"
+    },
+    {
+      "id": "perm-sync-resolve",
+      "name": "sync.resolve",
+      "module": "sync"
+    },
+    {
+      "id": "perm-loans-review",
+      "name": "loans.review",
+      "module": "loans"
+    },
+    {
+      "id": "perm-reports-view",
+      "name": "reports.view",
+      "module": "reports"
+    },
+    {
+      "id": "perm-shop-order",
+      "name": "shop.order",
+      "module": "shop"
+    },
+    {
+      "id": "perm-loans-apply",
+      "name": "loans.apply",
+      "module": "loans"
+    }
+  ],
+  "permission_role": [
+    {
+      "permission_id": "perm-users-manage",
+      "role_id": "role-admin"
+    },
+    {
+      "permission_id": "perm-impersonate",
+      "role_id": "role-admin"
+    },
+    {
+      "permission_id": "perm-settings-manage",
+      "role_id": "role-admin"
+    },
+    {
+      "permission_id": "perm-shareholders-review",
+      "role_id": "role-admin"
+    },
+    {
+      "permission_id": "perm-inventory-write",
+      "role_id": "role-admin"
+    },
+    {
+      "permission_id": "perm-pos-operate",
+      "role_id": "role-admin"
+    },
+    {
+      "permission_id": "perm-sync-push",
+      "role_id": "role-admin"
+    },
+    {
+      "permission_id": "perm-sync-resolve",
+      "role_id": "role-admin"
+    },
+    {
+      "permission_id": "perm-loans-review",
+      "role_id": "role-admin"
+    },
+    {
+      "permission_id": "perm-reports-view",
+      "role_id": "role-admin"
+    },
+    {
+      "permission_id": "perm-shop-order",
+      "role_id": "role-admin"
+    },
+    {
+      "permission_id": "perm-loans-apply",
+      "role_id": "role-admin"
+    },
+    {
+      "permission_id": "perm-settings-manage",
+      "role_id": "role-manager"
+    },
+    {
+      "permission_id": "perm-shareholders-review",
+      "role_id": "role-manager"
+    },
+    {
+      "permission_id": "perm-inventory-write",
+      "role_id": "role-manager"
+    },
+    {
+      "permission_id": "perm-pos-operate",
+      "role_id": "role-manager"
+    },
+    {
+      "permission_id": "perm-sync-push",
+      "role_id": "role-manager"
+    },
+    {
+      "permission_id": "perm-sync-resolve",
+      "role_id": "role-manager"
+    },
+    {
+      "permission_id": "perm-loans-review",
+      "role_id": "role-manager"
+    },
+    {
+      "permission_id": "perm-reports-view",
+      "role_id": "role-manager"
+    },
+    {
+      "permission_id": "perm-pos-operate",
+      "role_id": "role-cashier"
+    },
+    {
+      "permission_id": "perm-sync-push",
+      "role_id": "role-cashier"
+    },
+    {
+      "permission_id": "perm-shop-order",
+      "role_id": "role-shareholder"
+    },
+    {
+      "permission_id": "perm-loans-apply",
+      "role_id": "role-shareholder"
+    }
+  ],
+  "units": [
+    {
+      "id": "u-sack",
+      "name": "Sack",
+      "abbreviation": "sack"
+    },
+    {
+      "id": "u-kg",
+      "name": "Kilogram",
+      "abbreviation": "kg"
+    }
+  ],
+  "inventory_locations": [
+    {
+      "id": "loc-main",
+      "name": "Main Cooperative Warehouse",
+      "location_type": "warehouse"
+    }
+  ],
+  "pos_devices": [
+    {
+      "id": "dev-1",
+      "terminal_id": "TERMINAL-001",
+      "device_identifier": "DEV-COUNTER-01",
+      "last_sync_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "dev-2",
+      "terminal_id": "TERMINAL-002",
+      "device_identifier": "DEV-ANDROID-02",
+      "last_sync_at": "2026-11-10T08:00:00.000Z"
+    }
+  ],
+  "scheduled_tasks": [
+    {
+      "id": "task-backup-run",
+      "task_name": "backup:run",
+      "frequency": "Daily at 02:00",
+      "description": "Full SQLite database and configuration backup",
+      "last_run_at": "2026-11-15T02:00:00.000Z",
+      "next_run_at": "2026-11-16T02:00:00.000Z",
+      "last_status": "healthy",
+      "last_duration_ms": 184
+    },
+    {
+      "id": "task-backup-clean",
+      "task_name": "backup:clean",
+      "frequency": "Daily at 03:00",
+      "description": "Prune expired backups (keep 7d / 4w / 12m)",
+      "last_run_at": "2026-11-15T03:00:00.000Z",
+      "next_run_at": "2026-11-16T03:00:00.000Z",
+      "last_status": "healthy",
+      "last_duration_ms": 42
+    },
+    {
+      "id": "task-orders-cleanup",
+      "task_name": "order:cleanup-pending",
+      "frequency": "Hourly",
+      "description": "Expire stale uncollected online pre-orders > 24h",
+      "last_run_at": "2026-11-15T07:00:00.000Z",
+      "next_run_at": "2026-11-15T08:00:00.000Z",
+      "last_status": "healthy",
+      "last_duration_ms": 19
+    },
+    {
+      "id": "task-session-cleanup",
+      "task_name": "session:cleanup",
+      "frequency": "Daily",
+      "description": "Purge revoked and expired auth sessions",
+      "last_run_at": "2026-11-15T01:00:00.000Z",
+      "next_run_at": "2026-11-16T01:00:00.000Z",
+      "last_status": "healthy",
+      "last_duration_ms": 12
+    },
+    {
+      "id": "task-report-daily",
+      "task_name": "report:generate-daily",
+      "frequency": "Daily at 06:00",
+      "description": "Compile daily POS & loan ledger summary",
+      "last_run_at": "2026-11-15T06:00:00.000Z",
+      "next_run_at": "2026-11-16T06:00:00.000Z",
+      "last_status": "healthy",
+      "last_duration_ms": 95
+    },
+    {
+      "id": "task-audit-archive",
+      "task_name": "audit:archive",
+      "frequency": "Monthly",
+      "description": "Archive audit trail entries older than 1 year",
+      "last_run_at": "2026-11-01T04:00:00.000Z",
+      "next_run_at": "2026-12-01T04:00:00.000Z",
+      "last_status": "healthy",
+      "last_duration_ms": 210
+    }
+  ]
+}

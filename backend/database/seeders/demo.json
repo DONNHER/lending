@@ -1,0 +1,1238 @@
+{
+  "users": [
+    {
+      "id": "usr-admin",
+      "auth_user_id": "usr-admin-01",
+      "name": "Elena Rostova",
+      "email": "admin@argivitstore.com",
+      "role": "admin",
+      "account_status": "active",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "usr-manager",
+      "auth_user_id": "usr-mgr-01",
+      "name": "Marco Santos",
+      "email": "manager@argivitstore.com",
+      "role": "manager",
+      "account_status": "active",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "usr-cashier",
+      "auth_user_id": "usr-cash-01",
+      "name": "Lea Mendoza",
+      "email": "cashier@argivitstore.com",
+      "role": "cashier",
+      "account_status": "active",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "usr-sh-1",
+      "auth_user_id": "usr-sh-01",
+      "name": "Mateo Cruz",
+      "email": "mateo@argivitstore.com",
+      "role": "shareholder",
+      "account_status": "active",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "usr-sh-2",
+      "auth_user_id": "usr-sh-02",
+      "name": "Rosa Villanueva",
+      "email": "rosa@argivitstore.com",
+      "role": "shareholder",
+      "account_status": "active",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    }
+  ],
+  "audit_logs": [
+    {
+      "id": "aud-1",
+      "actor_id": "usr-manager",
+      "actor_name": "Marco Santos",
+      "action": "shareholder.approved",
+      "entity_type": "shareholder_profile",
+      "entity_id": "sh-1",
+      "metadata_json": "{\"membership_number\":\"ARG-SH-0001\"}",
+      "created_at": "2026-10-05T09:00:00.000Z"
+    }
+  ],
+  "shareholder_profiles": [
+    {
+      "id": "sh-1",
+      "user_id": "usr-sh-1",
+      "membership_number": "ARG-SH-0001",
+      "first_name": "Mateo",
+      "middle_name": "Reyes",
+      "last_name": "Cruz",
+      "birth_date": "1984-05-14",
+      "contact_number": "+63 917 555 0142",
+      "address": "Brgy. San Isidro, Cabanatuan City, Nueva Ecija",
+      "verification_status": "approved",
+      "approved_at": "2026-10-05T09:00:00.000Z",
+      "approved_by": "usr-manager",
+      "created_at": "2026-10-01T08:00:00.000Z"
+    },
+    {
+      "id": "sh-2",
+      "user_id": "usr-sh-2",
+      "membership_number": "ARG-SH-0002",
+      "first_name": "Rosa",
+      "middle_name": "Lim",
+      "last_name": "Villanueva",
+      "birth_date": "1990-08-22",
+      "contact_number": "+63 918 555 0198",
+      "address": "Brgy. Poblacion West, Munoz, Nueva Ecija",
+      "verification_status": "pending_review",
+      "approved_at": null,
+      "approved_by": null,
+      "created_at": "2026-11-08T10:00:00.000Z"
+    }
+  ],
+  "shareholder_documents": [
+    {
+      "id": "doc-1",
+      "shareholder_id": "sh-1",
+      "document_type": "government_id",
+      "file_name": "mateo_cruz_philsys.pdf",
+      "file_path": "/uploads/sh-1/philsys.pdf",
+      "review_status": "approved",
+      "reviewer_id": "usr-manager",
+      "reviewer_remarks": "ID verified against cooperative registry.",
+      "reviewed_at": "2026-10-04T14:00:00.000Z",
+      "created_at": "2026-10-02T09:00:00.000Z"
+    },
+    {
+      "id": "doc-2",
+      "shareholder_id": "sh-1",
+      "document_type": "farm_registration",
+      "file_name": "rsbsa_certificate_0142.pdf",
+      "file_path": "/uploads/sh-1/rsbsa.pdf",
+      "review_status": "approved",
+      "reviewer_id": "usr-manager",
+      "reviewer_remarks": "Active 4.2 hectare rice parcel verified.",
+      "reviewed_at": "2026-10-04T14:05:00.000Z",
+      "created_at": "2026-10-02T09:05:00.000Z"
+    },
+    {
+      "id": "doc-3",
+      "shareholder_id": "sh-2",
+      "document_type": "government_id",
+      "file_name": "rosa_villanueva_id.pdf",
+      "file_path": "/uploads/sh-2/id.pdf",
+      "review_status": "pending",
+      "reviewer_id": null,
+      "reviewer_remarks": null,
+      "reviewed_at": null,
+      "created_at": "2026-11-08T10:15:00.000Z"
+    }
+  ],
+  "share_capital_accounts": [
+    {
+      "id": "cap-acc-1",
+      "shareholder_id": "sh-1",
+      "required_amount": 5000,
+      "status": "paid",
+      "fully_paid_at": "2026-10-05T09:00:00.000Z",
+      "created_at": "2026-10-01T08:00:00.000Z"
+    },
+    {
+      "id": "cap-acc-2",
+      "shareholder_id": "sh-2",
+      "required_amount": 5000,
+      "status": "partial",
+      "fully_paid_at": null,
+      "created_at": "2026-11-08T10:00:00.000Z"
+    }
+  ],
+  "share_capital_payments": [
+    {
+      "id": "cap-pay-1",
+      "capital_account_id": "cap-acc-1",
+      "reference": "CAP-2026-0001",
+      "amount": 5000,
+      "payment_method": "bank_transfer",
+      "status": "verified",
+      "verified_by": "usr-manager",
+      "verified_at": "2026-10-05T09:00:00.000Z",
+      "created_at": "2026-10-03T11:30:00.000Z"
+    },
+    {
+      "id": "cap-pay-2",
+      "capital_account_id": "cap-acc-2",
+      "reference": "CAP-2026-0002",
+      "amount": 2500,
+      "payment_method": "gcash",
+      "status": "verified",
+      "verified_by": "usr-manager",
+      "verified_at": "2026-11-08T11:00:00.000Z",
+      "created_at": "2026-11-08T10:30:00.000Z"
+    },
+    {
+      "id": "cap-pay-3",
+      "capital_account_id": "cap-acc-2",
+      "reference": "CAP-2026-0003",
+      "amount": 2500,
+      "payment_method": "gcash",
+      "status": "pending",
+      "verified_by": null,
+      "verified_at": null,
+      "created_at": "2026-11-11T09:15:00.000Z"
+    }
+  ],
+  "products": [
+    {
+      "id": "prod-1",
+      "category_id": "cat-fert",
+      "sku": "AGR-FERT-001",
+      "barcode": "480001001001",
+      "name": "Complete Fertilizer NPK 14-14-14",
+      "description": "Balanced granular NPK nutrition for vegetative and fruiting stages across rice, corn, and vegetables.",
+      "base_unit": "kg",
+      "cost_price": 21.5,
+      "status": "active",
+      "image_key": "fertilizer",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "prod-2",
+      "category_id": "cat-fert",
+      "sku": "AGR-FERT-002",
+      "barcode": "480001001002",
+      "name": "Prilled Urea 46-0-0 Nitrogen",
+      "description": "High-analysis 46% nitrogen topdressing fertilizer for rapid leaf canopy and tiller development.",
+      "base_unit": "kg",
+      "cost_price": 24,
+      "status": "active",
+      "image_key": "fertilizer",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "prod-3",
+      "category_id": "cat-seed",
+      "sku": "AGR-SEED-001",
+      "barcode": "480001002001",
+      "name": "Mestizo 20 Hybrid Rice Seeds",
+      "description": "High-yielding certified hybrid paddy rice variety with strong lodging resistance and 112-day maturity.",
+      "base_unit": "kg",
+      "cost_price": 185,
+      "status": "active",
+      "image_key": "seeds",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "prod-4",
+      "category_id": "cat-seed",
+      "sku": "AGR-SEED-002",
+      "barcode": "480001002002",
+      "name": "Pioneer Yellow Dent Hybrid Corn",
+      "description": "Drought-tolerant yellow corn seed treated for early emergence and uniform ear fill.",
+      "base_unit": "kg",
+      "cost_price": 210,
+      "status": "active",
+      "image_key": "seeds",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "prod-5",
+      "category_id": "cat-feed",
+      "sku": "AGR-FEED-001",
+      "barcode": "480001003001",
+      "name": "Organic Layer Poultry Pellets",
+      "description": "Non-GMO whole-grain layer ration formulated with calcium and amino acids for peak egg production.",
+      "base_unit": "kg",
+      "cost_price": 26,
+      "status": "active",
+      "image_key": "feed",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "prod-6",
+      "category_id": "cat-feed",
+      "sku": "AGR-FEED-002",
+      "barcode": "480001003002",
+      "name": "Swine Grower Complete Mash",
+      "description": "Digestible soybean and yellow corn grower feed supporting steady lean weight gain.",
+      "base_unit": "kg",
+      "cost_price": 24.5,
+      "status": "active",
+      "image_key": "feed",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "prod-7",
+      "category_id": "cat-tool",
+      "sku": "AGR-SOIL-001",
+      "barcode": "480001004001",
+      "name": "Vermicast Organic Soil Conditioner",
+      "description": "Microbial-rich worm castings improving water retention and nutrient uptake in vegetable beds.",
+      "base_unit": "kg",
+      "cost_price": 7.5,
+      "status": "active",
+      "image_key": "fertilizer",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "prod-8",
+      "category_id": "cat-tool",
+      "sku": "AGR-CROP-002",
+      "barcode": "480001004002",
+      "name": "Potassium Sulfate 0-0-50 Soluble",
+      "description": "Water-soluble potash for foliar and fertigation applications during flowering and fruit sizing.",
+      "base_unit": "kg",
+      "cost_price": 68,
+      "status": "active",
+      "image_key": "fertilizer",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "prod-9",
+      "category_id": "cat-fert",
+      "sku": "AGR-FERT-003",
+      "barcode": "480001001003",
+      "name": "Ammonium Sulfate 21-0-0 + 24S",
+      "description": "Fast-acting nitrogen and sulfur fertilizer ideal for basal and early vegetative rice paddies.",
+      "base_unit": "kg",
+      "cost_price": 17.5,
+      "status": "active",
+      "image_key": "fertilizer",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "prod-10",
+      "category_id": "cat-fert",
+      "sku": "AGR-FERT-004",
+      "barcode": "480001001004",
+      "name": "Muriate of Potash 0-0-60 Granular",
+      "description": "Concentrated potassium chloride fertilizer for grain weight, stalk strength, and drought resilience.",
+      "base_unit": "kg",
+      "cost_price": 29,
+      "status": "active",
+      "image_key": "fertilizer",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "prod-11",
+      "category_id": "cat-fert",
+      "sku": "AGR-FERT-005",
+      "barcode": "480001001005",
+      "name": "Diammonium Phosphate 18-46-0",
+      "description": "High-phosphorus starter blend formulated to accelerate root establishment after transplanting.",
+      "base_unit": "kg",
+      "cost_price": 34,
+      "status": "active",
+      "image_key": "fertilizer",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "prod-12",
+      "category_id": "cat-seed",
+      "sku": "AGR-SEED-003",
+      "barcode": "480001002003",
+      "name": "Sweet Pearl F1 White Corn Seeds",
+      "description": "Early-maturing sweet white corn hybrid with tender kernels and strong leaf blight tolerance.",
+      "base_unit": "kg",
+      "cost_price": 240,
+      "status": "active",
+      "image_key": "seeds",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "prod-13",
+      "category_id": "cat-seed",
+      "sku": "AGR-SEED-004",
+      "barcode": "480001002004",
+      "name": "NSIC Rc222 Certified Inbred Rice",
+      "description": "Popular irrigated lowland inbred rice seed noted for consistent milling recovery and high tillering.",
+      "base_unit": "kg",
+      "cost_price": 42,
+      "status": "active",
+      "image_key": "seeds",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "prod-14",
+      "category_id": "cat-seed",
+      "sku": "AGR-SEED-005",
+      "barcode": "480001002005",
+      "name": "Morena F1 Eggplant Nursery Seed",
+      "description": "High-germination hybrid purple eggplant seed suited for lowland commercial vegetable plots.",
+      "base_unit": "kg",
+      "cost_price": 320,
+      "status": "active",
+      "image_key": "seeds",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "prod-15",
+      "category_id": "cat-feed",
+      "sku": "AGR-FEED-003",
+      "barcode": "480001003003",
+      "name": "Hog Starter Crumble Ration",
+      "description": "Balanced amino acid and probiotic starter crumble for weaned piglets from 35 to 70 days.",
+      "base_unit": "kg",
+      "cost_price": 27,
+      "status": "active",
+      "image_key": "feed",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "prod-16",
+      "category_id": "cat-feed",
+      "sku": "AGR-FEED-004",
+      "barcode": "480001003004",
+      "name": "Broiler Finisher Pellet 19%",
+      "description": "Energy-dense finishing pellet supporting uniform market weight and low feed conversion ratio.",
+      "base_unit": "kg",
+      "cost_price": 28,
+      "status": "active",
+      "image_key": "feed",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "prod-17",
+      "category_id": "cat-feed",
+      "sku": "AGR-FEED-005",
+      "barcode": "480001003005",
+      "name": "Tilapia Grower Floating Pellets",
+      "description": "Extruded 28% crude protein floating aquaculture feed formulated for freshwater fishpond cages.",
+      "base_unit": "kg",
+      "cost_price": 31,
+      "status": "active",
+      "image_key": "feed",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "prod-18",
+      "category_id": "cat-tool",
+      "sku": "AGR-SOIL-002",
+      "barcode": "480001004003",
+      "name": "Dolomite Agricultural Lime Powder",
+      "description": "Finely ground calcium-magnesium carbonate to neutralize acidic paddy and upland soils.",
+      "base_unit": "kg",
+      "cost_price": 5.5,
+      "status": "active",
+      "image_key": "fertilizer",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "prod-19",
+      "category_id": "cat-tool",
+      "sku": "AGR-CROP-003",
+      "barcode": "480001004004",
+      "name": "Zinc & Boron Chelated Soil Mix",
+      "description": "Micronutrient soil amendment correcting zinc deficiency and improving panicle fertility.",
+      "base_unit": "kg",
+      "cost_price": 72,
+      "status": "active",
+      "image_key": "fertilizer",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "prod-20",
+      "category_id": "cat-tool",
+      "sku": "AGR-SOIL-003",
+      "barcode": "480001004005",
+      "name": "Carbonized Rice Hull Biochar",
+      "description": "Porous organic soil amendment that retains moisture and boosts beneficial root microbes.",
+      "base_unit": "kg",
+      "cost_price": 6.5,
+      "status": "active",
+      "image_key": "fertilizer",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    }
+  ],
+  "product_units": [
+    {
+      "id": "unit-1-sack",
+      "product_id": "prod-1",
+      "unit_name": "sack (50 kg)",
+      "conversion_factor": 50,
+      "selling_price": 1250,
+      "is_default": 1
+    },
+    {
+      "id": "unit-1-kg",
+      "product_id": "prod-1",
+      "unit_name": "kg",
+      "conversion_factor": 1,
+      "selling_price": 28,
+      "is_default": 0
+    },
+    {
+      "id": "unit-2-sack",
+      "product_id": "prod-2",
+      "unit_name": "sack (50 kg)",
+      "conversion_factor": 50,
+      "selling_price": 1380,
+      "is_default": 1
+    },
+    {
+      "id": "unit-2-kg",
+      "product_id": "prod-2",
+      "unit_name": "kg",
+      "conversion_factor": 1,
+      "selling_price": 31,
+      "is_default": 0
+    },
+    {
+      "id": "unit-3-sack",
+      "product_id": "prod-3",
+      "unit_name": "sack (20 kg)",
+      "conversion_factor": 20,
+      "selling_price": 4200,
+      "is_default": 1
+    },
+    {
+      "id": "unit-3-kg",
+      "product_id": "prod-3",
+      "unit_name": "kg",
+      "conversion_factor": 1,
+      "selling_price": 225,
+      "is_default": 0
+    },
+    {
+      "id": "unit-4-sack",
+      "product_id": "prod-4",
+      "unit_name": "sack (18 kg)",
+      "conversion_factor": 18,
+      "selling_price": 4550,
+      "is_default": 1
+    },
+    {
+      "id": "unit-4-kg",
+      "product_id": "prod-4",
+      "unit_name": "kg",
+      "conversion_factor": 1,
+      "selling_price": 265,
+      "is_default": 0
+    },
+    {
+      "id": "unit-5-sack",
+      "product_id": "prod-5",
+      "unit_name": "sack (50 kg)",
+      "conversion_factor": 50,
+      "selling_price": 1490,
+      "is_default": 1
+    },
+    {
+      "id": "unit-5-kg",
+      "product_id": "prod-5",
+      "unit_name": "kg",
+      "conversion_factor": 1,
+      "selling_price": 33,
+      "is_default": 0
+    },
+    {
+      "id": "unit-6-sack",
+      "product_id": "prod-6",
+      "unit_name": "sack (50 kg)",
+      "conversion_factor": 50,
+      "selling_price": 1420,
+      "is_default": 1
+    },
+    {
+      "id": "unit-6-kg",
+      "product_id": "prod-6",
+      "unit_name": "kg",
+      "conversion_factor": 1,
+      "selling_price": 31,
+      "is_default": 0
+    },
+    {
+      "id": "unit-7-sack",
+      "product_id": "prod-7",
+      "unit_name": "sack (40 kg)",
+      "conversion_factor": 40,
+      "selling_price": 380,
+      "is_default": 1
+    },
+    {
+      "id": "unit-7-kg",
+      "product_id": "prod-7",
+      "unit_name": "kg",
+      "conversion_factor": 1,
+      "selling_price": 12,
+      "is_default": 0
+    },
+    {
+      "id": "unit-8-sack",
+      "product_id": "prod-8",
+      "unit_name": "sack (25 kg)",
+      "conversion_factor": 25,
+      "selling_price": 2150,
+      "is_default": 1
+    },
+    {
+      "id": "unit-8-kg",
+      "product_id": "prod-8",
+      "unit_name": "kg",
+      "conversion_factor": 1,
+      "selling_price": 92,
+      "is_default": 0
+    },
+    {
+      "id": "unit-9-sack",
+      "product_id": "prod-9",
+      "unit_name": "sack (50 kg)",
+      "conversion_factor": 50,
+      "selling_price": 1020,
+      "is_default": 1
+    },
+    {
+      "id": "unit-9-kg",
+      "product_id": "prod-9",
+      "unit_name": "kg",
+      "conversion_factor": 1,
+      "selling_price": 23,
+      "is_default": 0
+    },
+    {
+      "id": "unit-10-sack",
+      "product_id": "prod-10",
+      "unit_name": "sack (50 kg)",
+      "conversion_factor": 50,
+      "selling_price": 1680,
+      "is_default": 1
+    },
+    {
+      "id": "unit-10-kg",
+      "product_id": "prod-10",
+      "unit_name": "kg",
+      "conversion_factor": 1,
+      "selling_price": 37,
+      "is_default": 0
+    },
+    {
+      "id": "unit-11-sack",
+      "product_id": "prod-11",
+      "unit_name": "sack (50 kg)",
+      "conversion_factor": 50,
+      "selling_price": 1950,
+      "is_default": 1
+    },
+    {
+      "id": "unit-11-kg",
+      "product_id": "prod-11",
+      "unit_name": "kg",
+      "conversion_factor": 1,
+      "selling_price": 42,
+      "is_default": 0
+    },
+    {
+      "id": "unit-12-sack",
+      "product_id": "prod-12",
+      "unit_name": "sack (15 kg)",
+      "conversion_factor": 15,
+      "selling_price": 4100,
+      "is_default": 1
+    },
+    {
+      "id": "unit-12-kg",
+      "product_id": "prod-12",
+      "unit_name": "kg",
+      "conversion_factor": 1,
+      "selling_price": 290,
+      "is_default": 0
+    },
+    {
+      "id": "unit-13-sack",
+      "product_id": "prod-13",
+      "unit_name": "sack (40 kg)",
+      "conversion_factor": 40,
+      "selling_price": 1980,
+      "is_default": 1
+    },
+    {
+      "id": "unit-13-kg",
+      "product_id": "prod-13",
+      "unit_name": "kg",
+      "conversion_factor": 1,
+      "selling_price": 54,
+      "is_default": 0
+    },
+    {
+      "id": "unit-14-pack",
+      "product_id": "prod-14",
+      "unit_name": "sack (10 kg)",
+      "conversion_factor": 10,
+      "selling_price": 3650,
+      "is_default": 1
+    },
+    {
+      "id": "unit-14-kg",
+      "product_id": "prod-14",
+      "unit_name": "kg",
+      "conversion_factor": 1,
+      "selling_price": 390,
+      "is_default": 0
+    },
+    {
+      "id": "unit-15-sack",
+      "product_id": "prod-15",
+      "unit_name": "sack (50 kg)",
+      "conversion_factor": 50,
+      "selling_price": 1580,
+      "is_default": 1
+    },
+    {
+      "id": "unit-15-kg",
+      "product_id": "prod-15",
+      "unit_name": "kg",
+      "conversion_factor": 1,
+      "selling_price": 34,
+      "is_default": 0
+    },
+    {
+      "id": "unit-16-sack",
+      "product_id": "prod-16",
+      "unit_name": "sack (50 kg)",
+      "conversion_factor": 50,
+      "selling_price": 1640,
+      "is_default": 1
+    },
+    {
+      "id": "unit-16-kg",
+      "product_id": "prod-16",
+      "unit_name": "kg",
+      "conversion_factor": 1,
+      "selling_price": 36,
+      "is_default": 0
+    },
+    {
+      "id": "unit-17-sack",
+      "product_id": "prod-17",
+      "unit_name": "sack (25 kg)",
+      "conversion_factor": 25,
+      "selling_price": 920,
+      "is_default": 1
+    },
+    {
+      "id": "unit-17-kg",
+      "product_id": "prod-17",
+      "unit_name": "kg",
+      "conversion_factor": 1,
+      "selling_price": 40,
+      "is_default": 0
+    },
+    {
+      "id": "unit-18-sack",
+      "product_id": "prod-18",
+      "unit_name": "sack (50 kg)",
+      "conversion_factor": 50,
+      "selling_price": 360,
+      "is_default": 1
+    },
+    {
+      "id": "unit-18-kg",
+      "product_id": "prod-18",
+      "unit_name": "kg",
+      "conversion_factor": 1,
+      "selling_price": 9,
+      "is_default": 0
+    },
+    {
+      "id": "unit-19-sack",
+      "product_id": "prod-19",
+      "unit_name": "sack (25 kg)",
+      "conversion_factor": 25,
+      "selling_price": 2180,
+      "is_default": 1
+    },
+    {
+      "id": "unit-19-kg",
+      "product_id": "prod-19",
+      "unit_name": "kg",
+      "conversion_factor": 1,
+      "selling_price": 95,
+      "is_default": 0
+    },
+    {
+      "id": "unit-20-sack",
+      "product_id": "prod-20",
+      "unit_name": "sack (40 kg)",
+      "conversion_factor": 40,
+      "selling_price": 340,
+      "is_default": 1
+    },
+    {
+      "id": "unit-20-kg",
+      "product_id": "prod-20",
+      "unit_name": "kg",
+      "conversion_factor": 1,
+      "selling_price": 11,
+      "is_default": 0
+    }
+  ],
+  "inventory_balances": [
+    {
+      "id": "bal-prod-1",
+      "product_id": "prod-1",
+      "location_name": "Main Cooperative Warehouse",
+      "quantity_base": 2500
+    },
+    {
+      "id": "bal-prod-2",
+      "product_id": "prod-2",
+      "location_name": "Main Cooperative Warehouse",
+      "quantity_base": 1850
+    },
+    {
+      "id": "bal-prod-3",
+      "product_id": "prod-3",
+      "location_name": "Main Cooperative Warehouse",
+      "quantity_base": 640
+    },
+    {
+      "id": "bal-prod-4",
+      "product_id": "prod-4",
+      "location_name": "Main Cooperative Warehouse",
+      "quantity_base": 420
+    },
+    {
+      "id": "bal-prod-5",
+      "product_id": "prod-5",
+      "location_name": "Main Cooperative Warehouse",
+      "quantity_base": 1400
+    },
+    {
+      "id": "bal-prod-6",
+      "product_id": "prod-6",
+      "location_name": "Main Cooperative Warehouse",
+      "quantity_base": 950
+    },
+    {
+      "id": "bal-prod-7",
+      "product_id": "prod-7",
+      "location_name": "Main Cooperative Warehouse",
+      "quantity_base": 1200
+    },
+    {
+      "id": "bal-prod-8",
+      "product_id": "prod-8",
+      "location_name": "Main Cooperative Warehouse",
+      "quantity_base": 320
+    },
+    {
+      "id": "bal-prod-9",
+      "product_id": "prod-9",
+      "location_name": "Main Cooperative Warehouse",
+      "quantity_base": 1600
+    },
+    {
+      "id": "bal-prod-10",
+      "product_id": "prod-10",
+      "location_name": "Main Cooperative Warehouse",
+      "quantity_base": 1100
+    },
+    {
+      "id": "bal-prod-11",
+      "product_id": "prod-11",
+      "location_name": "Main Cooperative Warehouse",
+      "quantity_base": 900
+    },
+    {
+      "id": "bal-prod-12",
+      "product_id": "prod-12",
+      "location_name": "Main Cooperative Warehouse",
+      "quantity_base": 360
+    },
+    {
+      "id": "bal-prod-13",
+      "product_id": "prod-13",
+      "location_name": "Main Cooperative Warehouse",
+      "quantity_base": 1400
+    },
+    {
+      "id": "bal-prod-14",
+      "product_id": "prod-14",
+      "location_name": "Main Cooperative Warehouse",
+      "quantity_base": 120
+    },
+    {
+      "id": "bal-prod-15",
+      "product_id": "prod-15",
+      "location_name": "Main Cooperative Warehouse",
+      "quantity_base": 1250
+    },
+    {
+      "id": "bal-prod-16",
+      "product_id": "prod-16",
+      "location_name": "Main Cooperative Warehouse",
+      "quantity_base": 1100
+    },
+    {
+      "id": "bal-prod-17",
+      "product_id": "prod-17",
+      "location_name": "Main Cooperative Warehouse",
+      "quantity_base": 800
+    },
+    {
+      "id": "bal-prod-18",
+      "product_id": "prod-18",
+      "location_name": "Main Cooperative Warehouse",
+      "quantity_base": 2400
+    },
+    {
+      "id": "bal-prod-19",
+      "product_id": "prod-19",
+      "location_name": "Main Cooperative Warehouse",
+      "quantity_base": 450
+    },
+    {
+      "id": "bal-prod-20",
+      "product_id": "prod-20",
+      "location_name": "Main Cooperative Warehouse",
+      "quantity_base": 1600
+    }
+  ],
+  "inventory_movements": [
+    {
+      "id": "mov-init-prod-1",
+      "product_id": "prod-1",
+      "movement_type": "receipt",
+      "quantity_base": 2500,
+      "reference_type": "stock_receipt",
+      "reference_id": "rcpt-seed-001",
+      "created_by": "usr-manager",
+      "notes": "Initial cooperative warehouse stock",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "mov-init-prod-2",
+      "product_id": "prod-2",
+      "movement_type": "receipt",
+      "quantity_base": 1850,
+      "reference_type": "stock_receipt",
+      "reference_id": "rcpt-seed-001",
+      "created_by": "usr-manager",
+      "notes": "Initial cooperative warehouse stock",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "mov-init-prod-3",
+      "product_id": "prod-3",
+      "movement_type": "receipt",
+      "quantity_base": 640,
+      "reference_type": "stock_receipt",
+      "reference_id": "rcpt-seed-001",
+      "created_by": "usr-manager",
+      "notes": "Initial cooperative warehouse stock",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "mov-init-prod-4",
+      "product_id": "prod-4",
+      "movement_type": "receipt",
+      "quantity_base": 420,
+      "reference_type": "stock_receipt",
+      "reference_id": "rcpt-seed-001",
+      "created_by": "usr-manager",
+      "notes": "Initial cooperative warehouse stock",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "mov-init-prod-5",
+      "product_id": "prod-5",
+      "movement_type": "receipt",
+      "quantity_base": 1400,
+      "reference_type": "stock_receipt",
+      "reference_id": "rcpt-seed-001",
+      "created_by": "usr-manager",
+      "notes": "Initial cooperative warehouse stock",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "mov-init-prod-6",
+      "product_id": "prod-6",
+      "movement_type": "receipt",
+      "quantity_base": 950,
+      "reference_type": "stock_receipt",
+      "reference_id": "rcpt-seed-001",
+      "created_by": "usr-manager",
+      "notes": "Initial cooperative warehouse stock",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "mov-init-prod-7",
+      "product_id": "prod-7",
+      "movement_type": "receipt",
+      "quantity_base": 1200,
+      "reference_type": "stock_receipt",
+      "reference_id": "rcpt-seed-001",
+      "created_by": "usr-manager",
+      "notes": "Initial cooperative warehouse stock",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "mov-init-prod-8",
+      "product_id": "prod-8",
+      "movement_type": "receipt",
+      "quantity_base": 320,
+      "reference_type": "stock_receipt",
+      "reference_id": "rcpt-seed-001",
+      "created_by": "usr-manager",
+      "notes": "Initial cooperative warehouse stock",
+      "created_at": "2026-11-10T08:00:00.000Z"
+    }
+  ],
+  "orders": [
+    {
+      "id": "ord-seed-1",
+      "order_number": "ORD-2026-0101",
+      "shareholder_id": "sh-1",
+      "status": "confirmed",
+      "total": 5450,
+      "token_code": "ARG-ORD-8821",
+      "token_expires_at": "2026-11-20T23:59:59.000Z",
+      "token_used_at": null,
+      "notes": "Pickup at warehouse gate 2",
+      "created_at": "2026-11-12T07:30:00.000Z"
+    }
+  ],
+  "order_items": [
+    {
+      "id": "oi-seed-1",
+      "order_id": "ord-seed-1",
+      "product_id": "prod-1",
+      "product_name": "Complete Fertilizer NPK 14-14-14",
+      "sku": "AGR-FERT-001",
+      "quantity": 1,
+      "unit_id": "unit-1-sack",
+      "unit_name": "sack (50 kg)",
+      "conversion_factor": 50,
+      "unit_price": 1250,
+      "line_total": 1250
+    },
+    {
+      "id": "oi-seed-2",
+      "order_id": "ord-seed-1",
+      "product_id": "prod-3",
+      "product_name": "Mestizo 20 Hybrid Rice Seeds",
+      "sku": "AGR-SEED-001",
+      "quantity": 1,
+      "unit_id": "unit-3-sack",
+      "unit_name": "sack (20 kg)",
+      "conversion_factor": 20,
+      "unit_price": 4200,
+      "line_total": 4200
+    }
+  ],
+  "sales": [
+    {
+      "id": "sale-seed-1",
+      "sale_number": "SALE-2026-0001",
+      "cashier_id": "usr-cashier",
+      "terminal_id": "TERMINAL-001",
+      "order_id": null,
+      "shareholder_id": "sh-1",
+      "total": 2500,
+      "payment_method": "cash",
+      "status": "completed",
+      "source": "online_pos",
+      "created_at": "2026-11-11T10:15:00.000Z"
+    }
+  ],
+  "sale_items": [
+    {
+      "id": "si-seed-1",
+      "sale_id": "sale-seed-1",
+      "product_id": "prod-1",
+      "product_name": "Complete Fertilizer NPK 14-14-14",
+      "sku": "AGR-FERT-001",
+      "quantity": 2,
+      "unit_id": "unit-1-sack",
+      "unit_name": "sack (50 kg)",
+      "conversion_factor": 50,
+      "quantity_base": 100,
+      "unit_price": 1250,
+      "line_total": 2500
+    }
+  ],
+  "loan_applications": [
+    {
+      "id": "app-hist-1",
+      "shareholder_id": "sh-1",
+      "requested_amount": 12000,
+      "term_months": 3,
+      "purpose": "Dry season rice seed and basal fertilizer procurement",
+      "status": "approved",
+      "reviewer_id": "usr-manager",
+      "reviewer_remarks": "Approved within 6x share capital ceiling.",
+      "reviewed_at": "2026-07-02T10:00:00.000Z",
+      "created_at": "2026-07-01T09:00:00.000Z"
+    }
+  ],
+  "loans": [
+    {
+      "id": "loan-hist-1",
+      "loan_number": "LN-2026-0001",
+      "shareholder_id": "sh-1",
+      "application_id": "app-hist-1",
+      "principal": 12000,
+      "interest_rate": 0.06,
+      "interest_amount": 720,
+      "term_months": 3,
+      "status": "fully_paid",
+      "disbursed_at": "2026-07-03T11:00:00.000Z",
+      "disbursement_reference": "DISB-2026-0001",
+      "completed_at": "2026-10-03T15:00:00.000Z",
+      "created_at": "2026-07-02T10:00:00.000Z"
+    }
+  ],
+  "loan_installments": [
+    {
+      "id": "inst-hist-1",
+      "loan_id": "loan-hist-1",
+      "installment_number": 1,
+      "due_date": "2026-08-03",
+      "principal_due": 4000,
+      "interest_due": 240,
+      "fees_due": 0,
+      "amount_due": 4240,
+      "principal_paid": 4000,
+      "interest_paid": 240,
+      "fees_paid": 0,
+      "amount_paid": 4240,
+      "status": "paid",
+      "paid_at": "2026-08-03T10:00:00.000Z"
+    },
+    {
+      "id": "inst-hist-2",
+      "loan_id": "loan-hist-1",
+      "installment_number": 2,
+      "due_date": "2026-09-03",
+      "principal_due": 4000,
+      "interest_due": 240,
+      "fees_due": 0,
+      "amount_due": 4240,
+      "principal_paid": 4000,
+      "interest_paid": 240,
+      "fees_paid": 0,
+      "amount_paid": 4240,
+      "status": "paid",
+      "paid_at": "2026-09-03T10:00:00.000Z"
+    },
+    {
+      "id": "inst-hist-3",
+      "loan_id": "loan-hist-1",
+      "installment_number": 3,
+      "due_date": "2026-010-03",
+      "principal_due": 4000,
+      "interest_due": 240,
+      "fees_due": 0,
+      "amount_due": 4240,
+      "principal_paid": 4000,
+      "interest_paid": 240,
+      "fees_paid": 0,
+      "amount_paid": 4240,
+      "status": "paid",
+      "paid_at": "2026-010-03T10:00:00.000Z"
+    }
+  ],
+  "role_user": [
+    {
+      "user_id": "usr-admin",
+      "role_id": "role-admin"
+    },
+    {
+      "user_id": "usr-manager",
+      "role_id": "role-manager"
+    },
+    {
+      "user_id": "usr-cashier",
+      "role_id": "role-cashier"
+    },
+    {
+      "user_id": "usr-sh-1",
+      "role_id": "role-shareholder"
+    },
+    {
+      "user_id": "usr-sh-2",
+      "role_id": "role-shareholder"
+    }
+  ],
+  "order_tokens": [
+    {
+      "id": "otok-ord-seed-1",
+      "order_id": "ord-seed-1",
+      "token_hash": "53428e022b1ab3fd073150ca01463596507d9137ace1120fe42f4cc53a503519",
+      "expires_at": "2026-11-20T23:59:59.000Z",
+      "used_at": null
+    }
+  ],
+  "payments": [
+    {
+      "id": "pay-sale-seed-1",
+      "transaction_type": "pos_sale",
+      "transaction_id": "sale-seed-1",
+      "amount": 2500,
+      "payment_method": "cash",
+      "reference": "SALE-2026-0001",
+      "created_at": "2026-11-11T10:15:00.000Z"
+    }
+  ],
+  "loan_reviews": [
+    {
+      "id": "lrev-app-hist-1",
+      "application_id": "app-hist-1",
+      "manager_id": "usr-manager",
+      "decision": "approved",
+      "remarks": "Approved within 6x share capital ceiling.",
+      "created_at": "2026-07-02T10:00:00.000Z"
+    }
+  ],
+  "loan_disbursements": [
+    {
+      "id": "ldisb-loan-hist-1",
+      "loan_id": "loan-hist-1",
+      "amount": 12000,
+      "reference": "DISB-2026-0001",
+      "disbursed_by": "usr-manager",
+      "disbursed_at": "2026-07-03T11:00:00.000Z"
+    }
+  ],
+  "device_sync_states": [
+    {
+      "id": "dss-1",
+      "terminal_id": "TERMINAL-001",
+      "device_identifier": "DEV-COUNTER-01",
+      "last_cursor": "2026-11-10T08:00:00.000Z",
+      "last_sync_at": "2026-11-10T08:00:00.000Z",
+      "updated_at": "2026-11-10T08:00:00.000Z"
+    },
+    {
+      "id": "dss-2",
+      "terminal_id": "TERMINAL-002",
+      "device_identifier": "DEV-ANDROID-02",
+      "last_cursor": "2026-11-10T08:00:00.000Z",
+      "last_sync_at": "2026-11-10T08:00:00.000Z",
+      "updated_at": "2026-11-10T08:00:00.000Z"
+    }
+  ],
+  "backup_monitoring": [
+    {
+      "id": "bak-seed-daily",
+      "backup_type": "daily_full",
+      "storage_location": "Local Encrypted (/backups/daily)",
+      "size_bytes": 245760,
+      "status": "verified",
+      "retention_tier": "7 daily",
+      "triggered_by": "scheduler",
+      "notes": "Automated 02:00 AM ledger & catalog snapshot",
+      "created_at": "2026-11-15T02:00:00.000Z"
+    },
+    {
+      "id": "bak-seed-weekly",
+      "backup_type": "weekly_full",
+      "storage_location": "Local + S3 Archive (/backups/weekly)",
+      "size_bytes": 245760,
+      "status": "verified",
+      "retention_tier": "4 weekly",
+      "triggered_by": "scheduler",
+      "notes": "Sunday weekly full cooperative verification backup",
+      "created_at": "2026-11-10T02:00:00.000Z"
+    }
+  ]
+}

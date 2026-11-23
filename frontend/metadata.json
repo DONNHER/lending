@@ -1,0 +1,6 @@
+{
+  "name": "Argivit Store",
+  "description": "Agricultural cooperative ERP, hybrid offline-capable POS, online pre-order shop, shareholder membership capital ledger, and loan management system.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,17 @@
+:root {
+  color: #18352a;
+  background: #f0f6f2;
+  font: 16px/1.5 system-ui, sans-serif;
+}
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; box-sizing: border-box; }
+main { max-width: 520px; padding: 40px; background: #fff; border: 1px solid #dce8df; border-radius: 20px; box-shadow: 0 12px 42px #18352a0d; }
+.brand { color: #176745; font-weight: 700; }
+h1 { margin: 0; font-size: 2rem; }
+label { display: block; margin: 32px 0 8px; font-weight: 650; }
+input { box-sizing: border-box; width: 100%; padding: 10px 12px; border: 1px solid #749687; border-radius: 8px; font: inherit; }
+.actions { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; margin-top: 20px; }
+button { background: #176745; color: white; padding: 10px 16px; border: 0; border-radius: 8px; font: inherit; font-weight: 650; cursor: pointer; }
+button:disabled { opacity: .65; cursor: wait; }
+a { color: #176745; }
+.error { color: #952437; }
+:focus-visible { outline: 3px solid #3c8f69; outline-offset: 3px; }
