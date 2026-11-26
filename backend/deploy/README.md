@@ -14,7 +14,7 @@ From a checkout of the approved commit, run:
 bash backend/deploy/deploy.sh "$(git rev-parse HEAD)"
 ```
 
-The deploy script builds before replacing the running app, applies Laravel migrations, seeds reference data, and checks the version reported by both Laravel instances and the loan gateway. PostgreSQL runs on the private Compose network. The stack also runs one Laravel scheduler and shares persistent private storage between the two API containers.
+GitHub builds and uploads the commit-tagged images after the test gate. The Kali runner loads those images, applies Laravel migrations, seeds reference data, and checks the version reported by both Laravel instances and the loan gateway. A manual deploy builds the same images from the checkout. PostgreSQL runs on the private Compose network. The stack also runs one Laravel scheduler and shares persistent private storage between the two API containers.
 
 ## Endpoints
 

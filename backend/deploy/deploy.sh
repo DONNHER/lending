@@ -5,8 +5,8 @@ repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 state="${ARGIVET_STATE_DIR:-$HOME/.config/argivet-ledger}"
 version="${1:-$(git -C "$repo" rev-parse HEAD)}"
 mode="${2:-deploy}"
-if [[ ! "$version" =~ ^[0-9a-f]{40}$ ]] || [[ "$mode" != deploy && "$mode" != rollback ]]; then
-  echo "Usage: deploy.sh <40-character commit SHA> [deploy|rollback]" >&2
+if [[ ! "$version" =~ ^[0-9a-f]{40}$ ]] || [[ "$mode" != deploy && "$mode" != rollback && "$mode" != prebuilt ]]; then
+  echo "Usage: deploy.sh <40-character commit SHA> [deploy|prebuilt|rollback]" >&2
   exit 2
 fi
 env_file="$state/server.env"
@@ -25,9 +25,9 @@ verify() {
 start() { compose "$1" up -d --no-build --wait --wait-timeout 120 pos_api loan_api loan_web scheduler && verify "$1"; }
 previous="$(cat "$state/current-release" 2>/dev/null || true)"
 
-if [[ "$mode" == deploy ]]; then
+if [[ "$mode" != rollback ]]; then
   [[ "$version" == "$(git -C "$repo" rev-parse HEAD)" ]] || { echo "Checkout must match the release SHA." >&2; exit 2; }
-  compose "$version" build pos_api loan_web
+  if [[ "$mode" == deploy ]]; then compose "$version" build pos_api loan_web; fi
   compose "$version" up -d --wait postgres
   compose "$version" run --rm --no-deps --user www-data pos_api php artisan migrate --force --no-interaction
   compose "$version" run --rm --no-deps --user www-data pos_api php artisan db:seed --class=DatabaseSeeder --force --no-interaction
@@ -37,7 +37,7 @@ if start "$version"; then
   printf '%s\n' "$version" > "$state/current-release.tmp"
   mv "$state/current-release.tmp" "$state/current-release"
   echo "Verified release $version on POS and loans"
-elif [[ "$mode" == deploy && "$previous" =~ ^[0-9a-f]{40}$ && "$previous" != "$version" ]]; then
+elif [[ "$mode" != rollback && "$previous" =~ ^[0-9a-f]{40}$ && "$previous" != "$version" ]]; then
   echo "Release failed health checks. Restoring application images for $previous." >&2
   start "$previous"
   exit 1

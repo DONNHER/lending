@@ -42,6 +42,23 @@ jobs:
         working-directory: frontend
       - run: bash -n backend/deploy/deploy.sh
 
+
+      - name: Build and package deployment images
+        if: github.repository == 'DONNHER/Agrivet_Ledger' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          set -o pipefail
+          docker build --target api --build-arg APP_VERSION="$GITHUB_SHA" -f backend/deploy/Dockerfile -t "agrivet-ledger-api:$GITHUB_SHA" .
+          docker build --target loan -f backend/deploy/Dockerfile -t "agrivet-ledger-loan:$GITHUB_SHA" .
+          docker pull postgres:17
+          docker save "agrivet-ledger-api:$GITHUB_SHA" "agrivet-ledger-loan:$GITHUB_SHA" postgres:17 | gzip -1 > agrivet-images.tar.gz
+      - uses: actions/upload-artifact@v4
+        if: github.repository == 'DONNHER/Agrivet_Ledger' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          name: agrivet-images
+          path: agrivet-images.tar.gz
+          compression-level: 0
+          retention-days: 3
+
   deploy:
     needs: test
     if: github.repository == 'DONNHER/Agrivet_Ledger' && github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -55,5 +72,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: agrivet-images
+      - name: Load the checked release images
+        run: docker load -i agrivet-images.tar.gz
       - name: Deploy and verify exact commit on both entry points
-        run: bash backend/deploy/deploy.sh "$GITHUB_SHA"
+        run: bash backend/deploy/deploy.sh "$GITHUB_SHA" prebuilt
