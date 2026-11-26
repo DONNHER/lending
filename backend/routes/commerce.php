@@ -1,11 +1,13 @@
 <?php
 
 use App\Http\Controllers\CommerceController;
+use App\Http\Controllers\ShopAssistanceController;
 use App\Http\Controllers\SyncController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('argivit.auth')->group(function (): void {
     Route::get('/shop/products', [CommerceController::class, 'catalog']);
+    Route::post('/shop/assistance', ShopAssistanceController::class)->middleware(['argivit.role:shareholder', 'throttle:8,1']);
     Route::post('/orders', [CommerceController::class, 'createOrder']);
     Route::get('/orders/me', [CommerceController::class, 'myOrders']);
     Route::get('/orders/{id}', [CommerceController::class, 'showOrder']);

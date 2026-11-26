@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import fs from 'node:fs';
+import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import test, { after, before } from 'node:test';
 
 const backendDir = path.resolve(import.meta.dirname, '..');
@@ -20,13 +22,21 @@ const env = {
   DATABASE_URL: '',
   JWT_SECRET: 'argivit-test-signing-key-with-more-than-32-bytes',
   AUTH_JWKS_URL: '',
+  CACHE_STORE: 'array',
+  GEMINI_API_KEY: '',
+  OLLAMA_BASE_URL: '',
   ARGIVIT_ALLOW_DEMO_AUTH: 'true',
+  ARGIVIT_EMAIL_MFA: 'false',
+  ARGIVIT_NOTIFICATION_STREAM: 'true',
+  ARGIVIT_TEST_API_REQUESTS_PER_MINUTE: '1000',
   ARGIVIT_BACKUP_DIRECTORY: path.join(tempDir, 'backups'),
   DOCUMENT_STORAGE_DISK: 'local',
   DOCUMENT_STORAGE_LOCAL_PATH: path.join(tempDir, 'documents'),
 };
 let server: ChildProcess;
 let baseUrl = '';
+let ollama: ReturnType<typeof createHttpServer>;
+let ollamaPrompt: { question: string; inventory: Array<{ id: string; available: string; category: string }> };
 
 async function api<T = unknown>(
   endpoint: string,
@@ -56,6 +66,28 @@ before(async () => {
     cwd: backendDir, env, encoding: 'utf8', windowsHide: true,
   });
   assert.equal(setup.status, 0, setup.error?.message || setup.stderr || setup.stdout);
+
+  ollama = createHttpServer(async (request, response) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of request) chunks.push(chunk);
+    const payload = JSON.parse(Buffer.concat(chunks).toString());
+    ollamaPrompt = JSON.parse(payload.messages[1].content);
+    response.setHeader('Content-Type', 'application/json');
+    if (ollamaPrompt.question === 'Simulate an unavailable model') {
+      response.writeHead(503).end('{}');
+      return;
+    }
+    const product_ids = ['prod-1'];
+    if (ollamaPrompt.question === 'Simulate an invented product') product_ids.push('invented-id');
+    response.end(JSON.stringify({ message: { content: JSON.stringify({
+      explanation: 'This is a balanced granular fertilizer.', product_ids,
+    }) } }));
+  });
+  ollama.listen(0, '127.0.0.1');
+  await once(ollama, 'listening');
+  const ollamaAddress = ollama.address();
+  assert(ollamaAddress && typeof ollamaAddress !== 'string');
+  env.OLLAMA_BASE_URL = `http://127.0.0.1:${ollamaAddress.port}`;
 
   const reservation = createServer();
   reservation.listen(0, '127.0.0.1');
@@ -87,6 +119,7 @@ after(async () => {
     server.kill();
     await exited;
   }
+  if (ollama?.listening) await new Promise<void>((resolve) => ollama.close(() => resolve()));
   fs.rmSync(tempDir, { recursive: true, force: true });
 });
 
@@ -225,19 +258,19 @@ test('verification files require supported attachments and can only be downloade
   const upload = (file: Blob, filename: string) => {
     const body = new FormData();
     body.set('file', file, filename);
-    body.set('document_type', 'government_id');
+    body.set('document_type', 'original_land_paper');
     return fetch(`${baseUrl}/api/v1/shareholder-documents`, {
       method: 'POST', headers: { Authorization: `Bearer ${owner}` }, body,
     });
   };
   const missingFile = await api('/shareholder-documents', {
-    method: 'POST', token: owner, body: { document_type: 'government_id', file_name: 'filename-only.pdf' },
+    method: 'POST', token: owner, body: { document_type: 'original_land_paper', file_name: 'filename-only.pdf' },
   });
   assert.equal(missingFile.status, 422);
   const invalidUpload = await upload(new Blob(['Plain text'], { type: 'application/pdf' }), 'invalid.pdf');
   assert.equal(invalidUpload.status, 422);
   const pdf = '%PDF-1.7\n% Verification test\n%%EOF\n';
-  const stored = await upload(new Blob([pdf], { type: 'application/pdf' }), 'Member.id.PDF');
+  const stored = await upload(new Blob([pdf], { type: 'application/pdf' }), 'Original.land.PDF');
   const storedBody = await stored.json() as { data: { id: string }; message: string };
   assert.equal(stored.status, 201, storedBody.message);
 
@@ -257,6 +290,70 @@ test('verification files require supported attachments and can only be downloade
     const response = await fetch(`${baseUrl}${doc!.file_path}`, { headers: { Authorization: `Bearer ${token}` } });
     assert.equal(response.status, 403);
   }
+});
+
+test('Loans unlock only after a manager approves land papers and records the required capital', async () => {
+  const member = await api<{ token: string }>('/auth/register', {
+    method: 'POST', body: { email: 'land.paper@argivitstore.com', password: 'Argivit2026!', first_name: 'Isabel', last_name: 'Reyes' },
+  });
+  assert.equal(member.status, 201);
+  const token = member.json.data.token;
+  const manager = await api<{ token: string }>('/auth/login', {
+    method: 'POST', body: { email: 'manager@argivitstore.com', password: 'Argivit2026!' },
+  });
+  assert.equal(manager.status, 200);
+  const managerToken = manager.json.data.token;
+
+  const membership = () => api<{
+    profile: { id: string; verification_status: string };
+    loan_access: boolean;
+    required_share_capital: number;
+    capital_payments: Array<{ amount: number; status: string }>;
+  }>('/shareholders/me', { token });
+  const initial = (await membership()).json.data;
+  assert.equal(initial.profile.verification_status, 'incomplete');
+  assert.equal(initial.loan_access, false);
+  const memberPath = `/shareholders/${initial.profile.id}`;
+  const approve = () => api(`${memberPath}/verify`, { method: 'POST', token: managerToken, body: { decision: 'approved' } });
+  const record = (amount: number, reference: string, actorToken = managerToken) => api(`${memberPath}/share-capital/payments`, {
+    method: 'POST', token: actorToken, body: { amount, reference, payment_method: 'cash' },
+  });
+  const dashboard = () => api('/loans/dashboard', { token });
+  const upload = async (type: string) => {
+    const body = new FormData();
+    body.set('document_type', type);
+    body.set('file', new Blob(['%PDF-1.7\n% Land paper test\n%%EOF\n'], { type: 'application/pdf' }), 'land-paper.pdf');
+    return fetch(`${baseUrl}/api/v1/shareholder-documents`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body });
+  };
+
+  assert.equal((await dashboard()).status, 403);
+  assert.equal((await approve()).status, 422);
+  assert.equal((await record(2000, 'TEST-LAND-CAP-1')).status, 422);
+  assert.equal((await record(2000, 'TEST-LAND-CAP-1', token)).status, 403);
+  assert.equal((await api('/share-capital/payments', { method: 'POST', token, body: { amount: 5000, reference: 'TEST-SELF-CAP', payment_method: 'cash' } })).status, 403);
+
+  assert.equal((await upload('government_id')).status, 422);
+  const paper = await upload('notarized_land_paper');
+  assert.equal(paper.status, 201);
+  const { data: { id: documentId } } = await paper.json() as { data: { id: string } };
+  assert.equal((await membership()).json.data.profile.verification_status, 'pending_review');
+  assert.equal((await approve()).status, 422);
+  const review = await api(`/documents/${documentId}/review`, {
+    method: 'POST', token: managerToken, body: { decision: 'approved' },
+  });
+  assert.equal(review.status, 200);
+  assert.equal((await approve()).status, 200);
+  assert.equal((await dashboard()).status, 403);
+  assert.equal((await record(2000, 'TEST-LAND-CAP-1')).status, 201);
+  assert.equal((await membership()).json.data.loan_access, false);
+  assert.equal((await record(2000, 'TEST-LAND-CAP-1')).status, 422);
+  assert.equal((await record(initial.required_share_capital - 2000, 'TEST-LAND-CAP-2')).status, 201);
+
+  const unlocked = (await membership()).json.data;
+  assert.equal(unlocked.loan_access, true);
+  assert.equal(unlocked.capital_payments.length, 2);
+  assert.ok(unlocked.capital_payments.every((payment) => payment.status === 'verified'));
+  assert.equal((await dashboard()).status, 200);
 });
 
 test('products GET/PATCH, indexed search, and auditable inventory adjustments', async () => {
@@ -299,6 +396,39 @@ test('products GET/PATCH, indexed search, and auditable inventory adjustments', 
     },
   });
   assert.equal(adjRes.status, 201);
+});
+
+test('shop assistance uses scoped live inventory and safely handles model failures', async () => {
+  const login = await api<{ token: string }>('/auth/login', {
+    method: 'POST', body: { email: 'mateo@argivitstore.com', password: 'Argivit2026!' },
+  });
+  const token = login.json.data.token;
+  const category = 'Fertilizers & Soil';
+  type Assistance = { explanation: string; products: Array<{ id: string; stock_base: number }>; fallback: boolean };
+  const ask = (question: string) => api<Assistance>('/shop/assistance', { method: 'POST', token, body: { question, category } });
+
+  const denied = await api('/shop/assistance', { method: 'POST', body: { question: 'Do you have fertilizer?' } });
+  assert.equal(denied.status, 401);
+
+  const result = await ask('Do you have NPK fertilizer?');
+  assert.equal(result.status, 200);
+  assert.equal(result.json.data.explanation, 'This is a balanced granular fertilizer.');
+  assert.equal(result.json.data.fallback, false);
+  assert.deepEqual(result.json.data.products.map(({ id }) => id), ['prod-1']);
+  assert.equal(ollamaPrompt.question, 'Do you have NPK fertilizer?');
+  assert.ok(ollamaPrompt.inventory.every((product) => product.category === category));
+  const recommended = result.json.data.products[0];
+  assert.ok(recommended.stock_base > 0);
+  assert.equal(ollamaPrompt.inventory.find(({ id }) => id === 'prod-1')?.available, `${recommended.stock_base} kg`);
+
+  const invented = await ask('Simulate an invented product');
+  assert.deepEqual(invented.json.data.products.map(({ id }) => id), ['prod-1']);
+  assert.match(invented.json.data.explanation, /verify/);
+
+  const unavailable = await ask('Simulate an unavailable model');
+  assert.equal(unavailable.status, 200);
+  assert.equal(unavailable.json.data.fallback, true);
+  assert.deepEqual(unavailable.json.data.products, []);
 });
 
 test('online order draft -> confirm -> POS scan & fulfill, plus ownership guard', async () => {
@@ -873,3 +1003,170 @@ test('manager acceptance posts a conflicted cash sale once under the original ca
   assert.equal(after.json.data.stock_base, before.json.data.stock_base - quantity * 50);
 });
 
+test('scheduled database, upload and full backups verify and retain the newest copies', () => {
+  function artisan(...args: string[]) {
+    const result = spawnSync('php', ['artisan', ...args, '--no-ansi'], {
+      cwd: backendDir, env, encoding: 'utf8', windowsHide: true,
+    });
+    assert.equal(result.status, 0, result.stdout || result.stderr);
+  }
+
+  const db = new DatabaseSync(database);
+  try {
+    const sources = db.prepare("SELECT count(*) AS count FROM shareholder_documents WHERE file_path LIKE 'verification/%'").get();
+    assert.ok(Number(sources?.count) > 0, 'Expected the uploaded document from the API contract fixtures');
+    artisan('argivit:backup', 'database');
+    artisan('argivit:backup', 'uploads');
+    artisan('argivit:backup', 'full');
+
+    const records = db.prepare("SELECT backup_type, storage_location, status FROM backup_monitoring WHERE backup_type LIKE 'scheduled_%'").all();
+    assert.equal(records.length, 3);
+    const files = new Map(records.map((record) => {
+      assert.equal(record.status, 'verified');
+      const filename = String(record.storage_location).slice('Private local backup: '.length);
+      const file = path.join(env.ARGIVIT_BACKUP_DIRECTORY, filename);
+      assert.ok(fs.statSync(file).size > 0);
+      return [record.backup_type, file];
+    }));
+    assert.equal(fs.readFileSync(files.get('scheduled_database')!).subarray(0, 15).toString(), 'SQLite format 3');
+    assert.equal(fs.readFileSync(files.get('scheduled_full')!).subarray(0, 2).toString(), 'PK');
+
+    db.prepare("UPDATE backup_monitoring SET created_at = '2000-01-01T00:00:00.000Z' WHERE backup_type = 'scheduled_database'").run();
+    artisan('argivit:prune-backups');
+    assert.equal(fs.existsSync(files.get('scheduled_database')!), false);
+    assert.equal(fs.existsSync(files.get('scheduled_uploads')!), true);
+    assert.equal(db.prepare("SELECT status FROM backup_monitoring WHERE backup_type = 'scheduled_database'").get()?.status, 'expired');
+
+    db.prepare("INSERT INTO audit_logs (id, actor_id, actor_name, action, entity_type, entity_id, metadata_json, created_at) VALUES ('test-archive-90', 'test', 'Test', 'test.archive', 'test', 'test', '{}', '2000-01-01T00:00:00.000Z')").run();
+    artisan('argivit:archive-audit');
+    assert.ok(db.prepare("SELECT archived_at FROM audit_logs WHERE id = 'test-archive-90'").get()?.archived_at);
+  } finally {
+    db.close();
+  }
+});
+
+test('session timeout, devices, force sign-out, and impersonation share revocation semantics', async () => {
+  type Login = { token: string; session: { id: string; expires_at: string; remembered: boolean; idle_timeout: boolean } };
+  const signIn = async (email: string, remember: boolean) => {
+    const response = await api<Login>('/auth/login', {
+      method: 'POST', body: { email, password: 'Argivit2026!', remember },
+    });
+    assert.equal(response.status, 200);
+    return response.json.data;
+  };
+
+  const manager = await signIn('manager@argivitstore.com', false);
+  assert.equal(manager.session.remembered, false);
+  assert.equal(manager.session.idle_timeout, true);
+  const secondDevice = await signIn('manager@argivitstore.com', true);
+  const active = await api<Array<{ id: string; current: boolean }>>('/auth/sessions', { token: manager.token });
+  assert.ok(active.json.data.some((device) => device.id === manager.session.id && device.current));
+  assert.ok(active.json.data.some((device) => device.id === secondDevice.session.id && !device.current));
+
+  const db = new DatabaseSync(database);
+  try {
+    const minuteAgo = new Date(Date.now() - 60_000).toISOString();
+    db.prepare('UPDATE user_sessions SET last_active_at = ? WHERE id = ?').run(minuteAgo, manager.session.id);
+    const touch = await api<Login['session']>('/auth/session/activity', { method: 'POST', token: manager.token });
+    assert.equal(touch.status, 200);
+    assert.ok(Date.parse(touch.json.data.expires_at) >= Date.now() + 29 * 60_000);
+
+    assert.equal((await api('/auth/sessions/' + secondDevice.session.id, { method: 'DELETE', token: manager.token })).status, 200);
+    assert.equal((await api('/auth/me', { token: secondDevice.token })).status, 401);
+
+    const cashier = await signIn('cashier@argivitstore.com', true);
+    assert.equal(cashier.session.idle_timeout, false);
+    db.prepare("UPDATE user_sessions SET last_active_at = '2000-01-01T00:00:00.000Z' WHERE id IN (?, ?)").run(manager.session.id, cashier.session.id);
+    assert.equal((await api('/auth/me', { token: manager.token })).status, 401);
+    assert.equal((await api('/auth/session/activity', { method: 'POST', token: manager.token })).status, 401);
+    assert.equal((await api('/auth/me', { token: cashier.token })).status, 200);
+
+    const admin = await signIn('admin@argivitstore.com', true);
+    const secondAdminDevice = await signIn('admin@argivitstore.com', true);
+    const borrowed = await api<Login>('/admin/impersonation', {
+      method: 'POST', token: admin.token, body: { target_user_id: 'usr-manager' },
+    });
+    assert.equal(borrowed.status, 200);
+    const impersonatedToken = borrowed.json.data.token;
+    assert.equal((await api('/auth/me', { token: impersonatedToken })).status, 200);
+    assert.equal((await api('/admin/users/usr-admin/force-logout', { method: 'POST', token: impersonatedToken })).status, 403);
+    const signedOut = await api<{ sessions_revoked: number }>('/admin/users/usr-admin/force-logout', {
+      method: 'POST', token: secondAdminDevice.token,
+    });
+    assert.equal(signedOut.status, 200);
+    assert.ok(signedOut.json.data.sessions_revoked >= 2);
+    assert.equal((await api('/auth/me', { token: admin.token })).status, 401);
+    assert.equal((await api('/auth/me', { token: secondAdminDevice.token })).status, 401);
+    assert.equal((await api('/admin/impersonation', { method: 'DELETE', token: impersonatedToken })).status, 401);
+    assert.equal((await api('/auth/me', { token: cashier.token })).status, 200);
+  } finally {
+    db.close();
+  }
+});
+
+test('member and operator notifications are scoped, deduplicated, configurable and streamable', async () => {
+  const logIn = async (email: string) => {
+    const response = await api<{ token: string }>('/auth/login', {
+      method: 'POST', body: { email, password: 'Argivit2026!' },
+    });
+    assert.equal(response.status, 200);
+    return response.json.data.token;
+  };
+  const member = await logIn('mateo@argivitstore.com');
+  const manager = await logIn('manager@argivitstore.com');
+  const admin = await logIn('admin@argivitstore.com');
+  type Inbox = { items: Array<{ id: string; title: string }>; unread: number; preferences: Record<string, boolean>; stream_enabled: boolean };
+  const inbox = (token: string) => api<Inbox>('/notifications', { token });
+  assert.equal((await api('/notifications')).status, 401);
+  assert.equal((await api('/notifications/events')).status, 401);
+  const aboutMember = (await inbox(member)).json.data;
+  const notice = aboutMember.items.find((item) => item.title === 'Membership review updated' || item.title === 'Loan application reviewed');
+  assert.ok(notice);
+  assert.equal(aboutMember.stream_enabled, true);
+  assert.equal((await api('/notifications/' + notice.id, { method: 'DELETE', token: manager })).status, 200);
+  assert.ok((await inbox(member)).json.data.items.some((item) => item.id === notice.id));
+  assert.ok(!(await inbox(manager)).json.data.items.some((item) => item.id === notice.id));
+  assert.equal((await api('/notifications/read-all', { method: 'POST', token: member })).status, 200);
+  assert.equal((await inbox(member)).json.data.unread, 0);
+  assert.equal((await api('/notifications/' + notice.id, { method: 'DELETE', token: member })).status, 200);
+  assert.ok(!(await inbox(member)).json.data.items.some((item) => item.id === notice.id));
+
+  const prefs = await api('/notifications/preferences', { method: 'PATCH', token: manager, body: { kind: 'warning', enabled: false } });
+  assert.equal(prefs.status, 200);
+  assert.equal((await inbox(manager)).json.data.preferences.warning, false);
+
+  const db = new DatabaseSync(database);
+  try {
+    db.prepare("UPDATE inventory_balances SET quantity_base = 0 WHERE product_id = 'prod-1'").run();
+    for (let iteration = 0; iteration < 2; iteration++) {
+      const scheduled = spawnSync('php', ['artisan', 'argivit:notifications', '--no-ansi'], {
+        cwd: backendDir, env, encoding: 'utf8', windowsHide: true,
+      });
+      assert.equal(scheduled.status, 0, scheduled.stdout || scheduled.stderr);
+    }
+    assert.equal((await inbox(admin)).json.data.items.filter((item) => item.title === 'Products out of stock').length, 1);
+    assert.equal((await inbox(manager)).json.data.items.filter((item) => item.title === 'Products out of stock').length, 0);
+  } finally {
+    db.close();
+  }
+
+  const live = await fetch(baseUrl + '/api/v1/notifications/events', {
+    headers: { Authorization: 'Bearer ' + admin, Accept: 'text/event-stream' }, signal: AbortSignal.timeout(24_000),
+  });
+  assert.equal(live.status, 200);
+  assert.match(live.headers.get('Content-Type') ?? '', /^text\/event-stream/);
+  const reader = live.body!.getReader();
+  try {
+    let frame = '';
+    while (!frame.includes('\n\n')) {
+      const next = await reader.read();
+      if (next.done) break;
+      frame += Buffer.from(next.value).toString('utf8');
+    }
+    assert.match(frame, /^data: /);
+    const snapshot = JSON.parse(frame.split('\n\n')[0].slice(6)) as Inbox;
+    assert.ok(snapshot.items.some((item) => item.title === 'Products out of stock'));
+  } finally {
+    await reader.cancel();
+  }
+});

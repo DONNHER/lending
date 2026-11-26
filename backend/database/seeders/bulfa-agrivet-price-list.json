@@ -1,0 +1,483 @@
+[
+  {
+    "category_id": "cat-fert",
+    "category_name": "Fertilizers & Soil",
+    "code": "FERT",
+    "image_key": "fertilizer",
+    "items": [
+      {
+        "name": "Urea prilled 46-0-0",
+        "unit": "50 kg bag",
+        "selling_price": 2500
+      },
+      {
+        "name": "Urea granular 46-0-0",
+        "unit": "50 kg bag",
+        "selling_price": 2550
+      },
+      {
+        "name": "Ammosul 21-0-0",
+        "unit": "50 kg bag",
+        "selling_price": 1250
+      },
+      {
+        "name": "Complete 14-14-14",
+        "unit": "50 kg bag",
+        "selling_price": 1950
+      },
+      {
+        "name": "Ammophos 16-20-0",
+        "unit": "50 kg bag",
+        "selling_price": 1780
+      },
+      {
+        "name": "Muriate of Potash 0-0-60",
+        "unit": "50 kg bag",
+        "selling_price": 1720
+      },
+      {
+        "name": "DAP 18-46-0",
+        "unit": "50 kg bag",
+        "selling_price": 3150
+      },
+      {
+        "name": "Vermicompost",
+        "unit": "40 kg sack",
+        "selling_price": 350
+      },
+      {
+        "name": "Organic fertilizer (chicken dung based)",
+        "unit": "40 kg sack",
+        "selling_price": 280
+      },
+      {
+        "name": "Foliar fertilizer (generic)",
+        "unit": "1 L",
+        "selling_price": 260
+      },
+      {
+        "name": "Liquid NPK booster",
+        "unit": "1 L",
+        "selling_price": 310
+      },
+      {
+        "name": "Agricultural lime",
+        "unit": "40 kg sack",
+        "selling_price": 290
+      }
+    ]
+  },
+  {
+    "category_id": "cat-pesticides",
+    "category_name": "Pesticides",
+    "code": "PEST",
+    "image_key": "sprayer",
+    "items": [
+      {
+        "name": "Cypermethrin 10 EC",
+        "unit": "1 L",
+        "selling_price": 320,
+        "description": "Insecticide"
+      },
+      {
+        "name": "Chlorpyrifos 50 EC",
+        "unit": "500 mL",
+        "selling_price": 210,
+        "description": "Insecticide"
+      },
+      {
+        "name": "Carbofuran granules",
+        "unit": "1 kg",
+        "selling_price": 180,
+        "description": "Insecticide"
+      },
+      {
+        "name": "Lambda-cyhalothrin 2.5 EC",
+        "unit": "500 mL",
+        "selling_price": 245,
+        "description": "Insecticide"
+      },
+      {
+        "name": "Imidacloprid 20 SL",
+        "unit": "250 mL",
+        "selling_price": 195,
+        "description": "Insecticide"
+      },
+      {
+        "name": "Glyphosate 48 SL",
+        "unit": "1 L",
+        "selling_price": 260,
+        "description": "Herbicide"
+      },
+      {
+        "name": "2,4-D amine",
+        "unit": "1 L",
+        "selling_price": 230,
+        "description": "Herbicide"
+      },
+      {
+        "name": "Pre-emergent herbicide (generic)",
+        "unit": "1 L",
+        "selling_price": 340,
+        "description": "Herbicide"
+      },
+      {
+        "name": "Mancozeb 80 WP",
+        "unit": "1 kg",
+        "selling_price": 240,
+        "description": "Fungicide"
+      },
+      {
+        "name": "Copper oxychloride 50 WP",
+        "unit": "1 kg",
+        "selling_price": 310,
+        "description": "Fungicide"
+      },
+      {
+        "name": "Propiconazole 25 EC",
+        "unit": "250 mL",
+        "selling_price": 280,
+        "description": "Fungicide"
+      },
+      {
+        "name": "Rodenticide cake",
+        "unit": "100 g",
+        "selling_price": 95
+      }
+    ]
+  },
+  {
+    "category_id": "cat-feed",
+    "category_name": "Livestock Feed",
+    "code": "FEED",
+    "image_key": "feed",
+    "items": [
+      {
+        "name": "Broiler starter",
+        "unit": "25 kg sack",
+        "selling_price": 1450,
+        "description": "Chicken"
+      },
+      {
+        "name": "Broiler grower",
+        "unit": "25 kg sack",
+        "selling_price": 1380,
+        "description": "Chicken"
+      },
+      {
+        "name": "Broiler finisher",
+        "unit": "25 kg sack",
+        "selling_price": 1340,
+        "description": "Chicken"
+      },
+      {
+        "name": "Layer mash",
+        "unit": "25 kg sack",
+        "selling_price": 1320,
+        "description": "Layer chicken"
+      },
+      {
+        "name": "Duck feed",
+        "unit": "25 kg sack",
+        "selling_price": 1260,
+        "description": "Duck"
+      },
+      {
+        "name": "Swine starter",
+        "unit": "25 kg sack",
+        "selling_price": 1600,
+        "description": "Hog"
+      },
+      {
+        "name": "Swine grower",
+        "unit": "25 kg sack",
+        "selling_price": 1520,
+        "description": "Hog"
+      },
+      {
+        "name": "Swine finisher",
+        "unit": "50 kg sack",
+        "selling_price": 2880,
+        "description": "Hog"
+      },
+      {
+        "name": "Cattle concentrate",
+        "unit": "25 kg sack",
+        "selling_price": 1150,
+        "description": "Cattle"
+      },
+      {
+        "name": "Rice bran",
+        "unit": "25 kg sack",
+        "selling_price": 650,
+        "description": "Mixed livestock"
+      },
+      {
+        "name": "Fish feed (floating pellets)",
+        "unit": "15 kg sack",
+        "selling_price": 1100,
+        "description": "Tilapia"
+      },
+      {
+        "name": "Feed supplement premix",
+        "unit": "1 kg",
+        "selling_price": 420,
+        "description": "All livestock"
+      }
+    ]
+  },
+  {
+    "category_id": "cat-animal-care",
+    "category_name": "Animal Vitamins & Vet Supplies",
+    "code": "VET",
+    "image_key": "animal-care",
+    "items": [
+      {
+        "name": "Multivitamin injectable",
+        "unit": "100 mL",
+        "selling_price": 150,
+        "description": "General support"
+      },
+      {
+        "name": "Oxytetracycline injectable",
+        "unit": "100 mL",
+        "selling_price": 180,
+        "description": "Bacterial infection. vet advice"
+      },
+      {
+        "name": "Ivermectin injectable",
+        "unit": "50 mL",
+        "selling_price": 160,
+        "description": "Parasites"
+      },
+      {
+        "name": "Iron dextran injectable",
+        "unit": "100 mL",
+        "selling_price": 140,
+        "description": "Piglet anemia"
+      },
+      {
+        "name": "Dewormer oral (generic)",
+        "unit": "100 mL",
+        "selling_price": 120,
+        "description": "Internal parasites"
+      },
+      {
+        "name": "Newcastle disease vaccine",
+        "unit": "500-dose vial",
+        "selling_price": 850,
+        "description": "Poultry. cold chain"
+      },
+      {
+        "name": "Electrolyte powder",
+        "unit": "100 g sachet",
+        "selling_price": 35,
+        "description": "Stress and diarrhea"
+      }
+    ]
+  },
+  {
+    "category_id": "cat-seed",
+    "category_name": "Seeds & Planting",
+    "code": "SEED",
+    "image_key": "seed",
+    "items": [
+      {
+        "name": "Hybrid corn seed",
+        "unit": "1 kg",
+        "selling_price": 620
+      },
+      {
+        "name": "Inbred corn seed",
+        "unit": "1 kg",
+        "selling_price": 380
+      },
+      {
+        "name": "Certified rice seed (NSIC variety)",
+        "unit": "20 kg",
+        "selling_price": 1100
+      },
+      {
+        "name": "Mungbean seed",
+        "unit": "1 kg",
+        "selling_price": 180
+      },
+      {
+        "name": "Peanut seed",
+        "unit": "1 kg",
+        "selling_price": 160
+      },
+      {
+        "name": "Eggplant seed",
+        "unit": "10 g pack",
+        "selling_price": 35
+      },
+      {
+        "name": "Ampalaya seed",
+        "unit": "10 g pack",
+        "selling_price": 40
+      },
+      {
+        "name": "Tomato seed",
+        "unit": "5 g pack",
+        "selling_price": 45
+      },
+      {
+        "name": "Pechay seed",
+        "unit": "10 g pack",
+        "selling_price": 25
+      },
+      {
+        "name": "Sitaw seed",
+        "unit": "20 g pack",
+        "selling_price": 40
+      },
+      {
+        "name": "Squash seed",
+        "unit": "10 g pack",
+        "selling_price": 60
+      },
+      {
+        "name": "Cabbage seed",
+        "unit": "2 g pack",
+        "selling_price": 55
+      },
+      {
+        "name": "Chili seed",
+        "unit": "5 g pack",
+        "selling_price": 50
+      },
+      {
+        "name": "Okra seed",
+        "unit": "20 g pack",
+        "selling_price": 30
+      }
+    ]
+  },
+  {
+    "category_id": "cat-farm-equipment",
+    "category_name": "Farm Tools & Equipment",
+    "code": "TOOL",
+    "image_key": "sprayer",
+    "items": [
+      {
+        "name": "Knapsack sprayer",
+        "unit": "20 L",
+        "selling_price": 1100
+      },
+      {
+        "name": "Hand sprayer",
+        "unit": "16 L",
+        "selling_price": 950
+      },
+      {
+        "name": "Gasoline water pump, 2 inch",
+        "unit": "1 unit",
+        "selling_price": 8500
+      },
+      {
+        "name": "Garden hose",
+        "unit": "50 m",
+        "selling_price": 680
+      },
+      {
+        "name": "Bolo (machete)",
+        "unit": "1 piece",
+        "selling_price": 250
+      },
+      {
+        "name": "Pruning shears",
+        "unit": "1 piece",
+        "selling_price": 320
+      },
+      {
+        "name": "Hoe",
+        "unit": "1 piece",
+        "selling_price": 280
+      },
+      {
+        "name": "Shovel",
+        "unit": "1 piece",
+        "selling_price": 350
+      },
+      {
+        "name": "Rake",
+        "unit": "1 piece",
+        "selling_price": 260
+      },
+      {
+        "name": "Wheelbarrow",
+        "unit": "1 unit",
+        "selling_price": 1650
+      },
+      {
+        "name": "Plastic crate",
+        "unit": "1 piece",
+        "selling_price": 110
+      },
+      {
+        "name": "Digital weighing scale, 100 kg",
+        "unit": "1 unit",
+        "selling_price": 1850
+      }
+    ]
+  },
+  {
+    "category_id": "cat-farm-supplies",
+    "category_name": "Supplies & Sundries",
+    "code": "SUP",
+    "image_key": "sprayer",
+    "items": [
+      {
+        "name": "Plastic mulch roll",
+        "unit": "1 roll",
+        "selling_price": 720
+      },
+      {
+        "name": "Seedling tray, 200-cell",
+        "unit": "1 piece",
+        "selling_price": 90
+      },
+      {
+        "name": "Seedling bag",
+        "unit": "per piece",
+        "selling_price": 2
+      },
+      {
+        "name": "Bamboo stakes",
+        "unit": "1 bundle",
+        "selling_price": 120
+      },
+      {
+        "name": "Nylon twine",
+        "unit": "1 roll",
+        "selling_price": 85
+      },
+      {
+        "name": "Crop net, 50 m",
+        "unit": "1 roll",
+        "selling_price": 400
+      },
+      {
+        "name": "Empty fertilizer sack",
+        "unit": "per piece",
+        "selling_price": 12
+      },
+      {
+        "name": "Polypropylene sack, 50 kg",
+        "unit": "per piece",
+        "selling_price": 9
+      },
+      {
+        "name": "Rubber boots",
+        "unit": "1 pair",
+        "selling_price": 480
+      },
+      {
+        "name": "Work gloves",
+        "unit": "1 pair",
+        "selling_price": 45
+      }
+    ]
+  }
+]

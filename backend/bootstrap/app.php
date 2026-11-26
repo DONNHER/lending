@@ -1,7 +1,9 @@
 <?php
 
 use App\Http\Middleware\ApiRateLimit;
+use App\Http\Middleware\ApiSecurityHeaders;
 use App\Http\Middleware\AuthenticateSession;
+use App\Http\Middleware\Cors;
 use App\Http\Middleware\RequireRole;
 use App\Support\Api;
 use Illuminate\Foundation\Application;
@@ -12,10 +14,11 @@ use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 return Application::configure(basePath: dirname(__DIR__))
-    ->withRouting(api: __DIR__.'/../routes/api.php', apiPrefix: 'api/v1')
+    ->withRouting(api: __DIR__.'/../routes/api.php', commands: __DIR__.'/../routes/console.php', apiPrefix: 'api/v1')
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias(['argivit.auth' => AuthenticateSession::class, 'argivit.role' => RequireRole::class]);
-        $middleware->api(prepend: [ApiRateLimit::class]);
+        $middleware->append(ApiSecurityHeaders::class);
+        $middleware->api(prepend: [Cors::class, ApiRateLimit::class]);
         // Null and empty strings have different meanings in the existing API.
         $middleware->convertEmptyStringsToNull(except: [fn (Request $request) => $request->is('api/v1/*')]);
     })

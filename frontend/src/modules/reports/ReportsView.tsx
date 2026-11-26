@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileSpreadsheet, FileText } from 'lucide-react';
+import { FileSpreadsheet, FileText, Printer, Star, X } from 'lucide-react';
 import {
   Bar,
   BarChart,
@@ -19,7 +19,11 @@ import {
   type ReportTabView,
 } from '../../lib/reportExport';
 import type { ReportPeriod } from '../../lib/reportPeriods';
-import { EmptyState, ErrorState, LoadingSkeleton, StatusLabel } from '../../components/ui/StateViews';
+import { EmptyState, ErrorState, LoadingSkeleton } from '../../components/ui/StateViews';
+import { useAppStore } from '../../stores/app-store';
+import { DEFAULT_LEDGER_OPTIONS, filterLedger, ReportLedger, type LedgerColumn } from './ReportLedger';
+import { printReport } from './printReport';
+import { readReportFavorites, writeReportFavorites, type ReportPreset } from './reportPreferences';
 
 const PERIOD_OPTIONS: Array<{ id: ReportPeriod; label: string }> = [
   { id: 'daily', label: 'Daily' },
@@ -34,11 +38,89 @@ const REPORT_TABS: Array<{ id: ReportTabView; label: string }> = [
   { id: 'loans', label: 'Loan Reports' },
 ];
 
+type SaleRow = CooperativeReportData['pos_report']['recent_sales'][number];
+type LoanRow = CooperativeReportData['loans_report']['loans'][number];
+
+const saleColumns: LedgerColumn<SaleRow>[] = [
+  { key: 'sale', label: 'Sale #', value: (sale) => sale.sale_number },
+  { key: 'cashier', label: 'Cashier', value: (sale) => sale.cashier_name },
+  { key: 'method', label: 'Payment method', value: (sale) => describeSegment(sale.payment_method) },
+  { key: 'channel', label: 'Channel', value: (sale) => describeSegment(sale.source) },
+  { key: 'status', label: 'Status', value: (sale) => describeSegment(sale.status) },
+  { key: 'total', label: 'Total', value: (sale) => sale.total, render: (sale) => formatPHP(sale.total), numeric: true },
+  { key: 'time', label: 'Timestamp', value: (sale) => sale.created_at, render: (sale) => formatDateTime(sale.created_at) },
+];
+
+const loanColumns: LedgerColumn<LoanRow>[] = [
+  { key: 'loan', label: 'Loan #', value: (loan) => loan.loan_number },
+  { key: 'member', label: 'Member', value: (loan) => `${loan.shareholder_name} ${loan.membership_number}` },
+  { key: 'term', label: 'Term (months)', value: (loan) => loan.term_months, numeric: true },
+  { key: 'status', label: 'Status', value: (loan) => describeSegment(loan.status) },
+  { key: 'principal', label: 'Principal', value: (loan) => loan.principal, render: (loan) => formatPHP(loan.principal), numeric: true },
+  { key: 'paid', label: 'Paid', value: (loan) => loan.total_paid, render: (loan) => formatPHP(loan.total_paid), numeric: true },
+  { key: 'balance', label: 'Balance', value: (loan) => loan.outstanding_balance, render: (loan) => formatPHP(loan.outstanding_balance), numeric: true },
+];
+
+function describeSegment(value: string): string {
+  const words = value.replaceAll('_', ' ');
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+function describePreset(preset: ReportPreset): string {
+  return [
+    REPORT_TABS.find((tab) => tab.id === preset.tab)?.label,
+    PERIOD_OPTIONS.find((period) => period.id === preset.period)?.label,
+    preset.segment && describeSegment(preset.segment),
+    preset.ledger.search && `${preset.searchColumn || 'All columns'} “${preset.ledger.search}”`,
+    preset.ledger.sort && `sort ${preset.ledger.sort} ${preset.ledger.descending ? '↓' : '↑'}`,
+  ].filter(Boolean).join(' · ');
+}
+
+function buildPrintLedger<T>(id: string, columns: LedgerColumn<T>[], rows: T[]) {
+  return {
+    id,
+    headers: columns.map((column) => column.label),
+    rows: rows.map((row) => columns.map((column) => {
+      const formatted = column.render?.(row);
+      return typeof formatted === 'string' ? formatted : column.value(row);
+    })),
+  };
+}
+
+function ChartSegments({ label, values, selected, onSelect }: {
+  label: string;
+  values: string[];
+  selected: string;
+  onSelect: (value: string) => void;
+}) {
+  return (
+    <div data-report-control role="group" aria-label={label} className="mb-3 flex flex-wrap gap-1.5">
+      {['', ...values].map((value) => (
+        <button key={value} type="button" aria-pressed={selected === value} onClick={() => onSelect(value)}
+          className={`rounded-full border px-2.5 py-1 text-xs ${selected === value ? 'border-emerald-800 bg-emerald-800 text-white' : 'border-slate-300 text-slate-700 hover:border-emerald-700'}`}>
+          {value ? describeSegment(value) : 'All'}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function ReportsView() {
+  const userId = useAppStore((state) => state.session?.user.id);
+
+  return userId ? <ReportWorkspace key={userId} userId={userId} /> : null;
+}
+
+function ReportWorkspace({ userId }: { userId: string }) {
   const queryClient = useQueryClient();
   const [reportTab, setReportTab] = useState<ReportTabView>('overview');
   const [period, setPeriod] = useState<ReportPeriod>('monthly');
   const [exportMessage, setExportMessage] = useState<string | null>(null);
+  const [segment, setSegment] = useState('');
+  const [ledger, setLedger] = useState(DEFAULT_LEDGER_OPTIONS);
+  const [searchColumn, setSearchColumn] = useState('');
+  const [favorites, setFavorites] = useState(() => readReportFavorites(userId));
+  const printableContent = useRef<HTMLDivElement>(null);
 
   const reportQuery = useQuery({
     queryKey: ['reports-overview', period],
@@ -57,13 +139,66 @@ export function ReportsView() {
   }
 
   const data = reportQuery.data!;
+  const saleRows = reportTab === 'pos'
+    ? filterLedger(data.pos_report.recent_sales.filter((sale) => !segment || sale.payment_method === segment), saleColumns, ledger, searchColumn)
+    : data.pos_report.recent_sales;
+  const loanRows = reportTab === 'loans'
+    ? filterLedger(data.loans_report.loans.filter((loan) => !segment || loan.status === segment), loanColumns, ledger, searchColumn)
+    : data.loans_report.loans;
+  const preset = { tab: reportTab, period, segment, searchColumn, ledger };
+  const selectedFavorite = favorites.findIndex((favorite) => JSON.stringify(favorite) === JSON.stringify(preset));
+  const reportTitle = REPORT_TABS.find((tab) => tab.id === reportTab)!.label;
+  const reportLabel = [
+    data.period_label,
+    segment && describeSegment(segment),
+    ledger.search && `Search “${ledger.search}”`,
+  ].filter(Boolean).join(' · ');
+  const currentReportData = {
+    ...data,
+    period_label: reportLabel,
+    pos_report: { ...data.pos_report, recent_sales: saleRows },
+    loans_report: { ...data.loans_report, loans: loanRows },
+  };
+
+  function switchTab(tab: ReportTabView) {
+    setReportTab(tab);
+    setSegment('');
+    setLedger(DEFAULT_LEDGER_OPTIONS);
+    setSearchColumn('');
+  }
+
+  function restoreFavorite(favorite: ReportPreset) {
+    setReportTab(favorite.tab);
+    setPeriod(favorite.period);
+    setSegment(favorite.segment);
+    setSearchColumn(favorite.searchColumn);
+    setLedger(favorite.ledger);
+  }
+
+  function updateFavorites(next: ReportPreset[]) {
+    if (writeReportFavorites(userId, next)) {
+      setFavorites(next);
+    } else {
+      setExportMessage('The browser could not save report favorites.');
+    }
+  }
+
+  function handlePrint() {
+    const content = printableContent.current;
+    if (!content) return;
+    const printRows = reportTab === 'pos' ? buildPrintLedger('sales-ledger', saleColumns, saleRows)
+      : reportTab === 'loans' ? buildPrintLedger('loans-ledger', loanColumns, loanRows) : null;
+    if (!printReport(content, `${reportTitle} · Agrivit Store`, reportLabel, printRows)) {
+      setExportMessage('Allow pop-ups for this site to open the print view.');
+    }
+  }
 
   async function logExport(format: 'xlsx' | 'pdf') {
     const rowCount =
       reportTab === 'pos'
-        ? data.pos_report.recent_sales.length
+        ? saleRows.length
         : reportTab === 'loans'
-        ? data.loans_report.loans.length
+        ? loanRows.length
         : data.stock_by_category.length + data.pos_report.recent_sales.length;
 
     try {
@@ -74,6 +209,10 @@ export function ReportsView() {
           format,
           period,
           row_count: rowCount,
+          filters: {
+            segment, search: ledger.search, search_column: searchColumn,
+            sort: ledger.sort, descending: ledger.descending,
+          },
         }),
       });
       queryClient.invalidateQueries({ queryKey: ['admin-governance'] });
@@ -83,13 +222,13 @@ export function ReportsView() {
   }
 
   async function handleExportExcel() {
-    const filename = exportCooperativeReportExcel(data, reportTab);
+    const filename = exportCooperativeReportExcel(currentReportData, reportTab);
     setExportMessage(`Exported Excel workbook: ${filename}`);
     await logExport('xlsx');
   }
 
   async function handleExportPdf() {
-    const filename = exportCooperativeReportPdf(data, reportTab);
+    const filename = exportCooperativeReportPdf(currentReportData, reportTab);
     setExportMessage(`Exported PDF report: ${filename}`);
     await logExport('pdf');
   }
@@ -147,6 +286,10 @@ export function ReportsView() {
             <FileText className="h-3.5 w-3.5" />
             <span>Export PDF</span>
           </button>
+
+          <button type="button" onClick={handlePrint} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-medium hover:border-emerald-700 hover:text-emerald-900">
+            <Printer className="h-3.5 w-3.5" aria-hidden="true" /> Print report
+          </button>
         </div>
       </div>
 
@@ -163,7 +306,7 @@ export function ReportsView() {
               type="button"
               role="tab"
               aria-selected={reportTab === t.id}
-              onClick={() => setReportTab(t.id)}
+              onClick={() => { if (reportTab !== t.id) switchTab(t.id); }}
               className={`rounded-md px-3.5 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${
                 reportTab === t.id
                   ? 'bg-[#15803D] text-white'
@@ -180,6 +323,33 @@ export function ReportsView() {
         </span>
       </div>
 
+      <section aria-label="Favorite report configurations" className="flex flex-wrap items-center gap-2 rounded-xl border border-[#E2E8E4] bg-white p-3">
+        <button
+          type="button"
+          aria-pressed={selectedFavorite >= 0}
+          onClick={() => updateFavorites(selectedFavorite < 0 ? [...favorites, preset] : favorites.filter((_, index) => index !== selectedFavorite))}
+          className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-800 hover:border-emerald-700"
+        >
+          <Star className={`h-3.5 w-3.5 ${selectedFavorite >= 0 ? 'fill-amber-300 text-amber-700' : ''}`} aria-hidden="true" />
+          {selectedFavorite >= 0 ? 'Remove favorite' : 'Save as favorite'}
+        </button>
+        {favorites.map((favorite, index) => (
+          <div key={JSON.stringify(favorite)} className="inline-flex max-w-full rounded-md bg-emerald-50 text-xs text-emerald-900">
+            <button type="button" onClick={() => restoreFavorite(favorite)} className="min-w-0 truncate rounded-l-md px-2.5 py-1.5 text-left font-medium hover:bg-emerald-100">
+              {describePreset(favorite)}
+            </button>
+            <button
+              type="button"
+              aria-label={`Remove favorite ${describePreset(favorite)}`}
+              onClick={() => updateFavorites(favorites.filter((_, position) => position !== index))}
+              className="rounded-r-md px-1.5 hover:bg-emerald-100"
+            >
+              <X className="h-3 w-3" aria-hidden="true" />
+            </button>
+          </div>
+        ))}
+      </section>
+
       {exportMessage ? (
         <div
           role="status"
@@ -192,6 +362,7 @@ export function ReportsView() {
         </div>
       ) : null}
 
+      <div ref={printableContent}>
       {/* OVERVIEW REPORT TAB */}
       {reportTab === 'overview' ? (
         <>
@@ -204,6 +375,7 @@ export function ReportsView() {
               <div className="mt-1 text-[11px] text-[#64748B] tabular-nums">
                 {data.kpis.sales_count} completed sale(s) in period
               </div>
+              <button data-report-control type="button" onClick={() => switchTab('pos')} className="mt-2 text-xs font-semibold text-emerald-800 underline">View sales report</button>
             </div>
             <div className="rounded-xl border border-[#E2E8E4] bg-white p-5">
               <div className="text-xs text-[#64748B]">Warehouse Cost Value</div>
@@ -231,6 +403,7 @@ export function ReportsView() {
               <div className="mt-1 text-[11px] text-[#64748B] tabular-nums">
                 {data.kpis.loan_count} loan account(s) in period
               </div>
+              <button data-report-control type="button" onClick={() => switchTab('loans')} className="mt-2 text-xs font-semibold text-emerald-800 underline">View loan report</button>
             </div>
           </div>
 
@@ -310,6 +483,7 @@ export function ReportsView() {
               <h3 className="mb-4 font-display text-sm font-semibold text-[#0F172A]">
                 POS Revenue by Payment Method (PHP)
               </h3>
+              <ChartSegments label="Drill down by payment method" values={data.pos_report.by_payment_method.map((item) => item.payment_method)} selected={segment} onSelect={setSegment} />
               {data.pos_report.by_payment_method.length === 0 ? (
                 <EmptyState
                   title="No POS revenue in this period"
@@ -326,7 +500,8 @@ export function ReportsView() {
                         formatter={(value) => formatPHP(Number(value || 0))}
                         contentStyle={{ borderRadius: 8, borderColor: '#E2E8E4', fontSize: 12 }}
                       />
-                      <Bar dataKey="revenue" name="Revenue (PHP)" fill="#15803D" radius={[6, 6, 0, 0]} />
+                      <Bar dataKey="revenue" name="Revenue (PHP)" fill="#15803D" radius={[6, 6, 0, 0]}
+                        onClick={(_, index) => setSegment(data.pos_report.by_payment_method[index]?.payment_method ?? '')} className="cursor-pointer" />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -378,56 +553,18 @@ export function ReportsView() {
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-xl border border-[#E2E8E4] bg-white">
-            <div className="border-b border-[#E2E8E4] px-5 py-3.5">
-              <h3 className="font-display text-sm font-semibold text-[#0F172A]">
-                POS Sales Ledger ({data.pos_report.recent_sales.length})
-              </h3>
-            </div>
-            {data.pos_report.recent_sales.length === 0 ? (
-              <div className="p-5">
-                <EmptyState
-                  title="No sales in selected window"
-                  description="Try switching period between Daily, Weekly, Monthly, or Annually."
-                />
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="border-b border-[#E2E8E4] bg-[#F7F9F8] text-[#475569]">
-                    <tr>
-                      <th className="px-4 py-2.5">Sale #</th>
-                      <th className="px-4 py-2.5">Cashier</th>
-                      <th className="px-4 py-2.5">Method</th>
-                      <th className="px-4 py-2.5">Channel</th>
-                      <th className="px-4 py-2.5 text-right">Total</th>
-                      <th className="px-4 py-2.5 text-right">Timestamp</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#E2E8E4]">
-                    {data.pos_report.recent_sales.map((s) => (
-                      <tr key={s.id}>
-                        <td className="px-4 py-2.5 font-mono font-semibold text-[#0F172A]">
-                          {s.sale_number}
-                        </td>
-                        <td className="px-4 py-2.5 text-[#334155]">{s.cashier_name}</td>
-                        <td className="px-4 py-2.5 uppercase text-[#475569]">{s.payment_method}</td>
-                        <td className="px-4 py-2.5 capitalize text-[#475569]">
-                          {s.source.replace(/_/g, ' ')}
-                        </td>
-                        <td className="px-4 py-2.5 text-right font-mono font-semibold text-[#0F172A] tabular-nums">
-                          {formatPHP(s.total)}
-                        </td>
-                        <td className="px-4 py-2.5 text-right font-mono text-[#64748B] tabular-nums">
-                          {formatDateTime(s.created_at)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+          <ReportLedger
+            key={period + segment}
+            id="sales-ledger"
+            title="POS Sales Ledger"
+            rows={saleRows}
+            columns={saleColumns}
+            scopeNote={data.pos_report.sales_count > data.pos_report.recent_sales.length ? `Showing matches from the ${data.pos_report.recent_sales.length} most recent sales in this period.` : undefined}
+            options={ledger}
+            searchColumn={searchColumn}
+            onSearchColumn={setSearchColumn}
+            onOptions={setLedger}
+          />
         </div>
       ) : null}
 
@@ -474,6 +611,7 @@ export function ReportsView() {
             <h3 className="mb-4 font-display text-sm font-semibold text-[#0F172A]">
               Loan Principal by Status (PHP)
             </h3>
+            <ChartSegments label="Drill down by loan status" values={data.loans_report.by_status.map((item) => item.status)} selected={segment} onSelect={setSegment} />
             {data.loans_report.by_status.length === 0 ? (
               <EmptyState
                 title="No loan accounts in selected period"
@@ -490,83 +628,28 @@ export function ReportsView() {
                       formatter={(value) => formatPHP(Number(value || 0))}
                       contentStyle={{ borderRadius: 8, borderColor: '#E2E8E4', fontSize: 12 }}
                     />
-                    <Bar dataKey="principal" name="Principal (PHP)" fill="#15803D" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="principal" name="Principal (PHP)" fill="#15803D" radius={[6, 6, 0, 0]}
+                      onClick={(_, index) => setSegment(data.loans_report.by_status[index]?.status ?? '')} className="cursor-pointer" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             )}
           </div>
 
-          <div className="overflow-hidden rounded-xl border border-[#E2E8E4] bg-white">
-            <div className="border-b border-[#E2E8E4] px-5 py-3.5">
-              <h3 className="font-display text-sm font-semibold text-[#0F172A]">
-                Cooperative Loan Portfolio Ledger ({data.loans_report.loans.length})
-              </h3>
-            </div>
-            {data.loans_report.loans.length === 0 ? (
-              <div className="p-5">
-                <EmptyState
-                  title="No loans recorded in this timeframe"
-                  description="Select Annually or Monthly to view cooperative loan portfolio entries."
-                />
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="border-b border-[#E2E8E4] bg-[#F7F9F8] text-[#475569]">
-                    <tr>
-                      <th className="px-4 py-2.5">Loan #</th>
-                      <th className="px-4 py-2.5">Member</th>
-                      <th className="px-4 py-2.5">Term</th>
-                      <th className="px-4 py-2.5">Status</th>
-                      <th className="px-4 py-2.5 text-right">Principal</th>
-                      <th className="px-4 py-2.5 text-right">Paid</th>
-                      <th className="px-4 py-2.5 text-right">Balance</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#E2E8E4]">
-                    {data.loans_report.loans.map((l) => (
-                      <tr key={l.id}>
-                        <td className="px-4 py-2.5 font-mono font-semibold text-[#0F172A]">
-                          {l.loan_number}
-                        </td>
-                        <td className="px-4 py-2.5">
-                          <div className="font-medium text-[#0F172A]">{l.shareholder_name}</div>
-                          <div className="font-mono text-[11px] text-[#64748B]">
-                            {l.membership_number}
-                          </div>
-                        </td>
-                        <td className="px-4 py-2.5 font-mono tabular-nums">{l.term_months} mos</td>
-                        <td className="px-4 py-2.5">
-                          <StatusLabel
-                            tone={
-                              l.status === 'fully_paid'
-                                ? 'green'
-                                : l.status === 'overdue'
-                                ? 'red'
-                                : 'amber'
-                            }
-                            label={l.status.replace('_', ' ')}
-                          />
-                        </td>
-                        <td className="px-4 py-2.5 text-right font-mono tabular-nums">
-                          {formatPHP(l.principal)}
-                        </td>
-                        <td className="px-4 py-2.5 text-right font-mono text-[#15803D] tabular-nums">
-                          {formatPHP(l.total_paid)}
-                        </td>
-                        <td className="px-4 py-2.5 text-right font-mono font-semibold text-[#0F172A] tabular-nums">
-                          {formatPHP(l.outstanding_balance)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+          <ReportLedger
+            key={period + segment}
+            id="loans-ledger"
+            title="Cooperative Loan Portfolio Ledger"
+            rows={loanRows}
+            columns={loanColumns}
+            options={ledger}
+            searchColumn={searchColumn}
+            onSearchColumn={setSearchColumn}
+            onOptions={setLedger}
+          />
         </div>
       ) : null}
+      </div>
     </div>
   );
 }

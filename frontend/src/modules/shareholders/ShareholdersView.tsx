@@ -6,6 +6,7 @@ import { formatDateTime, formatPHP } from '../../lib/productAssets';
 import { downloadVerificationDocument, uploadVerificationDocument } from '../../lib/verificationDocuments';
 import { useAppStore } from '../../stores/app-store';
 import type {
+  LandPaperType,
   ShareCapitalAccount,
   ShareCapitalPayment,
   ShareholderDocument,
@@ -13,20 +14,27 @@ import type {
 } from '../../types/domain';
 import { ConfirmDialog, type ConfirmDetailRow } from '../../components/ui/ConfirmDialog';
 import { EmptyState, ErrorState, LoadingSkeleton, StatusLabel } from '../../components/ui/StateViews';
+import { membershipQuery } from './membershipQuery';
+
+const LAND_PAPERS: Record<LandPaperType, string> = {
+  original_land_paper: 'Original land paper',
+  notarized_land_paper: 'Notarized land paper',
+};
+
+function isLandPaper(type: ShareholderDocument['document_type']): type is LandPaperType {
+  return type === 'original_land_paper' || type === 'notarized_land_paper';
+}
+
+function documentLabel(type: ShareholderDocument['document_type']) {
+  return isLandPaper(type) ? LAND_PAPERS[type] : type.replaceAll('_', ' ');
+}
 
 type PendingShareholderTx =
   | { kind: 'verify_membership'; shId: string; memberName: string; membershipNumber: string }
-  | { kind: 'review_doc'; docId: string; docType: string; fileName: string; decision: 'approved' | 'rejected' }
+  | { kind: 'review_doc'; docId: string; docType: ShareholderDocument['document_type']; fileName: string; decision: 'approved' | 'rejected' }
   | { kind: 'verify_capital_pay'; payId: string; reference: string; amount: number; method: string }
-  | { kind: 'upload_doc'; documentType: ShareholderDocument['document_type']; file: File }
-  | { kind: 'submit_pay' };
-
-interface MeShareholderResponse {
-  profile: ShareholderProfile;
-  capital_account: ShareCapitalAccount;
-  capital_payments: ShareCapitalPayment[];
-  documents: ShareholderDocument[];
-}
+  | { kind: 'upload_doc'; documentType: LandPaperType; file: File }
+  | { kind: 'record_capital'; shId: string; memberName: string; amount: number; method: ShareCapitalPayment['payment_method']; reference: string };
 
 interface DirectoryShareholder extends ShareholderProfile {
   email: string;
@@ -38,7 +46,9 @@ interface DirectoryShareholder extends ShareholderProfile {
 
 export function ShareholdersView() {
   const queryClient = useQueryClient();
-  const role = useAppStore((s) => s.session?.user.role);
+  const user = useAppStore((s) => s.session?.user);
+  const setActiveWorkspace = useAppStore((s) => s.setActiveWorkspace);
+  const role = user?.role;
   const isStaff = role === 'admin' || role === 'manager';
 
   const [feedback, setFeedback] = useState<{ tone: 'green' | 'red'; text: string } | null>(null);
@@ -46,18 +56,14 @@ export function ShareholdersView() {
   const [pendingTx, setPendingTx] = useState<PendingShareholderTx | null>(null);
 
   // Shareholder self-service states
-  const [docType, setDocType] = useState<ShareholderDocument['document_type']>('government_id');
+  const [docType, setDocType] = useState<LandPaperType>('original_land_paper');
   const [documentFile, setDocumentFile] = useState<File | null>(null);
   const documentInput = useRef<HTMLInputElement>(null);
-  const [payAmount, setPayAmount] = useState('5000');
-  const [payMethod, setPayMethod] = useState<'cash' | 'bank_transfer' | 'gcash'>('gcash');
-  const [payRef, setPayRef] = useState(`CAP-${Date.now().toString().slice(-6)}`);
+  const [payAmount, setPayAmount] = useState('');
+  const [payMethod, setPayMethod] = useState<ShareCapitalPayment['payment_method']>('cash');
+  const [payRef, setPayRef] = useState('');
 
-  const meQuery = useQuery({
-    queryKey: ['shareholder-me'],
-    enabled: !isStaff,
-    queryFn: async () => (await apiRequest<MeShareholderResponse | null>('/shareholders/me')).data,
-  });
+  const meQuery = useQuery(membershipQuery(role === 'shareholder' ? user?.id : undefined));
 
   const directoryQuery = useQuery({
     queryKey: ['shareholders-directory'],
@@ -103,24 +109,26 @@ export function ShareholdersView() {
     );
   }
 
-  const submitPayMutation = useMutation({
-    mutationFn: async () =>
-      apiRequest('/share-capital/payments', {
+  const recordCapitalMutation = useMutation({
+    mutationFn: async (entry: Extract<PendingShareholderTx, { kind: 'record_capital' }>) =>
+      apiRequest(`/shareholders/${entry.shId}/share-capital/payments`, {
         method: 'POST',
         body: JSON.stringify({
-          amount: Number(payAmount),
-          payment_method: payMethod,
-          reference: payRef,
+          amount: entry.amount,
+          payment_method: entry.method,
+          reference: entry.reference,
         }),
       }),
     onSuccess: (res) => {
       setFeedback({ tone: 'green', text: res.message });
-      setPayRef(`CAP-${Date.now().toString().slice(-6)}`);
+      setPayAmount('');
+      setPayRef('');
       queryClient.invalidateQueries({ queryKey: ['shareholder-me'] });
       queryClient.invalidateQueries({ queryKey: ['shareholders-directory'] });
+      queryClient.invalidateQueries({ queryKey: ['reports-overview'] });
     },
     onError: (err) => {
-      setFeedback({ tone: 'red', text: err instanceof ApiError ? err.message : 'Payment submission failed.' });
+      setFeedback({ tone: 'red', text: err instanceof ApiError ? err.errors?.reference?.[0] || err.errors?.amount?.[0] || err.message : 'Could not record share capital.' });
     },
   });
 
@@ -183,7 +191,7 @@ export function ShareholdersView() {
   if (pendingTx?.kind === 'verify_membership') {
     confirmConfig = {
       title: 'Confirm Membership Approval',
-      description: 'Approve this shareholder membership and unlock cooperative member privileges.',
+      description: 'Approve this membership after reviewing the land paper. Record the required share capital to unlock Loans.',
       details: [
         { label: 'Shareholder', value: pendingTx.memberName },
         { label: 'Membership #', value: pendingTx.membershipNumber },
@@ -205,7 +213,7 @@ export function ShareholdersView() {
         ? 'Mark this verification document as approved.'
         : 'Reject this verification document and request a clearer submission.',
       details: [
-        { label: 'Document Type', value: pendingTx.docType.replace('_', ' ') },
+        { label: 'Document Type', value: documentLabel(pendingTx.docType) },
         { label: 'Filename', value: pendingTx.fileName },
       ],
       confirmLabel: isApprove ? 'Confirm Approval' : 'Confirm Rejection',
@@ -244,7 +252,7 @@ export function ShareholdersView() {
       title: 'Confirm Document Submission',
       description: 'Submit this verification document to cooperative management for review.',
       details: [
-        { label: 'Document Type', value: pendingTx.documentType.replaceAll('_', ' ') },
+        { label: 'Document Type', value: documentLabel(pendingTx.documentType) },
         { label: 'Filename', value: pendingTx.file.name },
       ],
       confirmLabel: 'Confirm & Submit',
@@ -253,26 +261,27 @@ export function ShareholdersView() {
         uploadDocMutation.mutate(pendingTx, { onSettled: () => setPendingTx(null) });
       },
     };
-  } else if (pendingTx?.kind === 'submit_pay') {
+  } else if (pendingTx?.kind === 'record_capital') {
     confirmConfig = {
-      title: 'Confirm Share Capital Payment',
-      description: 'Submit this share capital contribution for cooperative verification.',
+      title: 'Confirm Share Capital Entry',
+      description: 'Record this contribution as verified share capital for the selected member.',
       details: [
-        { label: 'Reference', value: payRef },
-        { label: 'Amount', value: formatPHP(Number(payAmount)) },
-        { label: 'Method', value: payMethod.replace('_', ' ') },
+        { label: 'Member', value: pendingTx.memberName },
+        { label: 'Receipt reference', value: pendingTx.reference },
+        { label: 'Amount', value: formatPHP(pendingTx.amount) },
+        { label: 'Method', value: pendingTx.method.replace('_', ' ') },
       ],
-      confirmLabel: 'Confirm Payment',
+      confirmLabel: 'Record Payment',
       tone: 'green',
       onConfirm: () => {
-        submitPayMutation.mutate(undefined, { onSettled: () => setPendingTx(null) });
+        recordCapitalMutation.mutate(pendingTx, { onSettled: () => setPendingTx(null) });
       },
     };
   }
 
   const anyPending =
     uploadDocMutation.isPending ||
-    submitPayMutation.isPending ||
+    recordCapitalMutation.isPending ||
     reviewDocMutation.isPending ||
     verifyMembershipMutation.isPending ||
     verifyCapitalPayMutation.isPending;
@@ -290,6 +299,21 @@ export function ShareholdersView() {
 
     const list = directoryQuery.data || [];
     const activeMember = list.find((m) => m.id === selectedShId) || list[0] || null;
+    const memberApproved = activeMember?.verification_status === 'approved';
+    const landPaperApproved = activeMember?.documents.some((doc) => isLandPaper(doc.document_type) && doc.has_file && doc.review_status === 'approved');
+
+    function handleCapitalEntry(event: FormEvent) {
+      event.preventDefault();
+      if (!activeMember || !memberApproved || !activeMember.capital_account) return;
+      setPendingTx({
+        kind: 'record_capital',
+        shId: activeMember.id,
+        memberName: `${activeMember.first_name} ${activeMember.last_name}`,
+        amount: Number(payAmount),
+        method: payMethod,
+        reference: payRef.trim(),
+      });
+    }
 
     return (
       <div className="space-y-5">
@@ -317,7 +341,7 @@ export function ShareholdersView() {
                 Shareholder Members ({list.length})
               </h2>
               <p className="text-xs text-[#64748B]">
-                Select a member to verify identity documents and fixed share capital payments
+                Select a member to review land papers, approve membership, or record share capital.
               </p>
             </div>
             <div className="divide-y divide-[#E2E8E4]">
@@ -327,7 +351,12 @@ export function ShareholdersView() {
                   <button
                     key={sh.id}
                     type="button"
-                    onClick={() => setSelectedShId(sh.id)}
+                    onClick={() => {
+                      setSelectedShId(sh.id);
+                      setPayAmount('');
+                      setPayMethod('cash');
+                      setPayRef('');
+                    }}
                     className={`flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition-colors ${
                       selected ? 'bg-[#F0FDF4]' : 'hover:bg-[#F7F9F8]'
                     }`}
@@ -382,7 +411,9 @@ export function ShareholdersView() {
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {activeMember.verification_status !== 'approved' ? (
+                      {memberApproved ? (
+                        <StatusLabel tone="green" label="Membership approved" />
+                      ) : landPaperApproved ? (
                         <button
                           type="button"
                           onClick={() =>
@@ -399,7 +430,7 @@ export function ShareholdersView() {
                           Approve Membership
                         </button>
                       ) : (
-                        <StatusLabel tone="green" label="Membership Approved" />
+                        <p className="text-sm text-slate-600">Approve a land paper to continue.</p>
                       )}
                     </div>
                   </div>
@@ -408,7 +439,7 @@ export function ShareholdersView() {
                 {/* Documents Queue */}
                 <div className="rounded-xl border border-[#E2E8E4] bg-white p-5 space-y-3">
                   <h4 className="font-display text-sm font-semibold text-[#0F172A]">
-                    Submitted Verification Documents
+                    Submitted documents
                   </h4>
                   {activeMember.documents.length === 0 ? (
                     <p className="text-xs text-[#64748B]">No documents uploaded yet.</p>
@@ -421,7 +452,7 @@ export function ShareholdersView() {
                         >
                           <div>
                             <div className="text-sm font-medium text-[#0F172A] capitalize">
-                              {doc.document_type.replace('_', ' ')}
+                              {documentLabel(doc.document_type)}
                             </div>
                             <div className="font-mono text-xs text-[#64748B]">{doc.file_name}</div>
                           </div>
@@ -437,7 +468,7 @@ export function ShareholdersView() {
                               }
                               label={doc.review_status}
                             />
-                            {doc.review_status === 'pending' ? (
+                            {doc.review_status === 'pending' && (doc.has_file || !isLandPaper(doc.document_type)) ? (
                               <>
                                 <button
                                   type="button"
@@ -488,7 +519,7 @@ export function ShareholdersView() {
                         Fixed Share Capital Ledger
                       </h4>
                       <p className="text-xs text-[#64748B]">
-                        Paid amount is strictly computed from verified immutable payment records
+                        Verified contributions count toward the member’s required share capital.
                       </p>
                     </div>
                     {activeMember.capital_account ? (
@@ -503,6 +534,36 @@ export function ShareholdersView() {
                       </div>
                     ) : null}
                   </div>
+
+                  {memberApproved && activeMember.capital_account ? (
+                    <form onSubmit={handleCapitalEntry} className="grid gap-3 rounded-xl border border-emerald-100 bg-emerald-50/40 p-4 sm:grid-cols-3">
+                      <label className="min-w-0 text-xs font-semibold text-slate-700">
+                        Amount (PHP)
+                        <input type="number" min="0.01" step="0.01" required value={payAmount} onChange={(event) => setPayAmount(event.target.value)}
+                          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal" />
+                      </label>
+                      <label className="min-w-0 text-xs font-semibold text-slate-700">
+                        Payment method
+                        <select value={payMethod} onChange={(event) => setPayMethod(event.target.value as ShareCapitalPayment['payment_method'])}
+                          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal">
+                          <option value="cash">Cash</option>
+                          <option value="bank_transfer">Bank transfer</option>
+                          <option value="gcash">GCash</option>
+                        </select>
+                      </label>
+                      <label className="min-w-0 text-xs font-semibold text-slate-700">
+                        Receipt reference
+                        <input type="text" required minLength={3} maxLength={150} value={payRef} onChange={(event) => setPayRef(event.target.value)}
+                          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal" />
+                      </label>
+                      <button type="submit" disabled={recordCapitalMutation.isPending || payRef.trim().length < 3 || Number(payAmount) <= 0}
+                        className="justify-self-start rounded-lg bg-[#15803D] px-3.5 py-2 text-sm font-semibold text-white hover:bg-[#166534] disabled:opacity-50 sm:col-span-3">
+                        Record share capital
+                      </button>
+                    </form>
+                  ) : !memberApproved ? (
+                    <p className="text-sm text-slate-600">Approve membership before recording share capital.</p>
+                  ) : null}
 
                   <div className="divide-y divide-[#E2E8E4]">
                     {activeMember.capital_payments.map((pay) => (
@@ -529,7 +590,7 @@ export function ShareholdersView() {
                             }
                             label={pay.status}
                           />
-                          {pay.status === 'pending' ? (
+                          {memberApproved && pay.status === 'pending' ? (
                             <button
                               type="button"
                               onClick={() =>
@@ -589,7 +650,12 @@ export function ShareholdersView() {
     );
   }
 
-  const { profile, capital_account, capital_payments, documents } = me;
+  const { profile, capital_account, capital_payments, documents, loan_access, required_share_capital } = me;
+  const approved = profile.verification_status === 'approved';
+  const landPapers = documents.filter((doc) => isLandPaper(doc.document_type));
+  const acceptedPaper = landPapers.some((doc) => doc.has_file && doc.review_status === 'approved');
+  const pendingPaper = landPapers.some((doc) => doc.has_file && doc.review_status === 'pending');
+  const verifiedCapital = capital_account?.paid_amount ?? 0;
 
   function handleDocSubmit(e: FormEvent) {
     e.preventDefault();
@@ -599,11 +665,6 @@ export function ShareholdersView() {
       return;
     }
     setPendingTx({ kind: 'upload_doc', documentType: docType, file: documentFile });
-  }
-
-  function handlePaySubmit(e: FormEvent) {
-    e.preventDefault();
-    setPendingTx({ kind: 'submit_pay' });
   }
 
   return (
@@ -624,39 +685,49 @@ export function ShareholdersView() {
         </div>
       ) : null}
 
-      {/* Membership Summary Strip */}
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-950">Membership verification</h1>
+          <p className="mt-1 text-sm text-slate-600">
+            {loan_access ? 'Your membership and required share capital are verified.' : approved
+              ? 'Loans unlock when your manager records the required share capital.'
+              : 'Submit your land paper for review. After approval, your manager records your share capital.'}
+          </p>
+        </div>
+        {loan_access ? (
+          <button type="button" onClick={() => setActiveWorkspace('loans')} className="rounded-lg bg-[#15803D] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#166534]">Open Loans</button>
+        ) : (
+          <div className="flex flex-wrap items-center gap-3">
+            <StatusLabel tone="neutral" label="Loans locked" />
+            <button type="button" onClick={() => void meQuery.refetch()} disabled={meQuery.isFetching}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-[#14532D] disabled:opacity-50">Refresh status</button>
+          </div>
+        )}
+      </header>
+
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <div className="rounded-xl border border-[#E2E8E4] bg-white p-5">
-          <div className="text-xs font-medium text-[#64748B]">Membership Number</div>
-          <div className="mt-1.5 font-mono text-xl font-bold text-[#0F172A]">
-            {profile.membership_number}
-          </div>
+          <h2 className="text-sm font-semibold text-slate-900">1. Land paper</h2>
           <div className="mt-2">
             <StatusLabel
-              tone={profile.verification_status === 'approved' ? 'green' : 'amber'}
-              label={`Verification: ${profile.verification_status.replace('_', ' ')}`}
+              tone={approved || acceptedPaper ? 'green' : pendingPaper ? 'amber' : landPapers.length > 0 ? 'red' : 'neutral'}
+              label={approved || acceptedPaper ? 'Complete' : pendingPaper ? 'Under review' : landPapers.length > 0 ? 'Replacement needed' : 'Upload needed'}
             />
           </div>
         </div>
 
         <div className="rounded-xl border border-[#E2E8E4] bg-white p-5">
-          <div className="text-xs font-medium text-[#64748B]">Fixed Share Capital Paid</div>
-          <div className="mt-1.5 font-mono text-xl font-bold text-[#15803D] tabular-nums">
-            {formatPHP(capital_account.paid_amount)}
-          </div>
-          <div className="mt-1 font-mono text-xs text-[#64748B] tabular-nums">
-            Required: {formatPHP(capital_account.required_amount)} · Status: {capital_account.status}
+          <h2 className="text-sm font-semibold text-slate-900">2. Membership approval</h2>
+          <p className="mt-1 font-mono text-xs text-slate-600">{profile.membership_number}</p>
+          <div className="mt-2">
+            <StatusLabel tone={approved ? 'green' : 'amber'} label={approved ? 'Approved' : acceptedPaper ? 'Awaiting approval' : 'Awaiting land paper'} />
           </div>
         </div>
 
         <div className="rounded-xl border border-[#E2E8E4] bg-white p-5">
-          <div className="text-xs font-medium text-[#64748B]">Loan Credit Multiplier</div>
-          <div className="mt-1.5 font-mono text-xl font-bold text-[#0F172A] tabular-nums">
-            {profile.verification_status === 'approved' && capital_account.status === 'paid'
-              ? formatPHP(capital_account.paid_amount * 6)
-              : 'Locked'}
-          </div>
-          <div className="mt-1 text-xs text-[#64748B]">6 × verified share capital upon approval</div>
+          <h2 className="text-sm font-semibold text-slate-900">3. Verified share capital</h2>
+          <p className="mt-1.5 text-lg font-bold tabular-nums text-[#15803D]">{formatPHP(verifiedCapital)}</p>
+          <p className="mt-1 text-xs text-slate-600">Required for Loans {formatPHP(required_share_capital)}</p>
         </div>
       </div>
 
@@ -666,51 +737,40 @@ export function ShareholdersView() {
           <div className="flex items-center gap-2">
             <FileCheck2 className="h-4 w-4 text-[#15803D]" />
             <h3 className="font-display text-base font-semibold text-[#0F172A]">
-              Membership Documents
+              Land paper for verification
             </h3>
           </div>
 
-          <form onSubmit={handleDocSubmit} className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <select
-              aria-label="Document type"
-              value={docType}
-              onChange={(e) => setDocType(e.target.value as ShareholderDocument['document_type'])}
-              className="rounded-lg border border-[#CBD5E1] bg-white px-3 py-2 text-xs"
-            >
-              <option value="government_id">Government ID</option>
-              <option value="farm_registration">Farm Registration</option>
-              <option value="proof_of_residency">Proof of Residency</option>
-              <option value="membership_form">Membership Form</option>
-            </select>
-            <input
-              ref={documentInput}
-              type="file"
-              required
-              aria-label="Verification document file"
-              accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-              disabled={uploadDocMutation.isPending}
-              onChange={(e) => setDocumentFile(e.target.files?.[0] ?? null)}
-              className="min-w-0 rounded-lg border border-[#CBD5E1] px-3 py-2 text-xs"
-            />
-            <button
-              type="submit"
-              disabled={uploadDocMutation.isPending || !documentFile}
-              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#15803D] px-3 py-2 text-xs font-medium text-white hover:bg-[#166534]"
-            >
-              <Upload className="h-3.5 w-3.5" />
-              Submit Doc
-            </button>
-          </form>
-          <p className="text-xs text-[#64748B]">PDF, JPG, or PNG up to 5 MB.</p>
+          {!approved && !acceptedPaper && (
+            <>
+              <p className="text-sm text-slate-600">Upload a clear photo or scan of the original or notarized land paper.</p>
+              <form onSubmit={handleDocSubmit} className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <select aria-label="Document type" value={docType} onChange={(e) => setDocType(e.target.value as LandPaperType)}
+                  className="min-w-0 rounded-lg border border-[#CBD5E1] bg-white px-3 py-2 text-xs">
+                  {Object.entries(LAND_PAPERS).map(([type, label]) => <option key={type} value={type}>{label}</option>)}
+                </select>
+                <input ref={documentInput} type="file" required aria-label="Verification document file"
+                  accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" disabled={uploadDocMutation.isPending}
+                  onChange={(e) => setDocumentFile(e.target.files?.[0] ?? null)}
+                  className="min-w-0 rounded-lg border border-[#CBD5E1] px-3 py-2 text-xs" />
+                <button type="submit" disabled={uploadDocMutation.isPending || !documentFile}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#15803D] px-3 py-2 text-xs font-medium text-white hover:bg-[#166534] disabled:opacity-50">
+                  <Upload className="h-3.5 w-3.5" /> Upload land paper
+                </button>
+              </form>
+              <p className="text-xs text-[#64748B]">PDF, JPG, or PNG up to 5 MB.</p>
+            </>
+          )}
 
           <div className="divide-y divide-[#E2E8E4]">
             {documents.map((doc) => (
               <div key={doc.id} className="flex items-center justify-between py-2.5 text-xs">
                 <div>
                   <div className="font-medium text-[#0F172A] capitalize">
-                    {doc.document_type.replace('_', ' ')}
+                    {documentLabel(doc.document_type)}
                   </div>
                   <div className="font-mono text-[#64748B]">{doc.file_name}</div>
+                  {doc.reviewer_remarks && <p className="mt-1 text-slate-600">{doc.reviewer_remarks}</p>}
                 </div>
                 <div className="flex items-center gap-2">
                   {downloadButton(doc)}
@@ -730,7 +790,7 @@ export function ShareholdersView() {
           </div>
         </div>
 
-        {/* Share Capital Payment Submissions */}
+        {/* Share capital ledger */}
         <div className="rounded-xl border border-[#E2E8E4] bg-white p-5 space-y-4">
           <div className="flex items-center gap-2">
             <Wallet className="h-4 w-4 text-[#15803D]" />
@@ -739,36 +799,8 @@ export function ShareholdersView() {
             </h3>
           </div>
 
-          {capital_account.status !== 'paid' ? (
-            <form onSubmit={handlePaySubmit} className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <input
-                type="number"
-                min="1"
-                required
-                aria-label="Capital payment amount"
-                value={payAmount}
-                onChange={(e) => setPayAmount(e.target.value)}
-                className="rounded-lg border border-[#CBD5E1] px-3 py-2 font-mono text-xs"
-              />
-              <select
-                aria-label="Capital payment method"
-                value={payMethod}
-                onChange={(e) => setPayMethod(e.target.value as 'cash' | 'bank_transfer' | 'gcash')}
-                className="rounded-lg border border-[#CBD5E1] bg-white px-3 py-2 text-xs"
-              >
-                <option value="gcash">GCash</option>
-                <option value="bank_transfer">Bank Transfer</option>
-                <option value="cash">Cash Counter</option>
-              </select>
-              <button
-                type="submit"
-                disabled={submitPayMutation.isPending}
-                className="rounded-lg bg-[#15803D] px-3 py-2 text-xs font-medium text-white hover:bg-[#166534]"
-              >
-                Submit Payment
-              </button>
-            </form>
-          ) : null}
+          <p className="text-sm text-slate-600">Your cooperative manager records contributions after membership approval.</p>
+          {capital_payments.length === 0 && <p className="text-sm text-slate-600">No contributions recorded yet.</p>}
 
           <div className="divide-y divide-[#E2E8E4]">
             {capital_payments.map((pay) => (

@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { createPortal } from 'react-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CheckCircle2,
   Minus,
   Plus,
-  Printer,
   QrCode,
   Receipt,
   RefreshCw,
@@ -18,11 +16,11 @@ import {
   WifiOff,
 } from 'lucide-react';
 import { apiRequest, ApiError } from '../../lib/api';
+import { useTranslate } from '../../lib/language';
 import { convertToBaseUnit, roundCurrency, validateStockAvailability } from '../../lib/domainRules';
 import { createPosSaleId, isPosConnectionError, loadPosCatalog, savePosCatalog } from '../../lib/posOffline';
 import { fetchOnlinePosCatalog } from '../../lib/posCatalog';
 import {
-  buildEscPosReceiptBytes,
   classifyScannedCode,
   connectSerialBarcodeScanner,
   connectSerialThermalPrinter,
@@ -31,7 +29,6 @@ import {
   isRapidScannerBurst,
   pickDefaultProductUnit,
   playScannerBeep,
-  sendEscPosToPrinter,
   type ConnectedThermalPrinter,
 } from '../../lib/posHardware';
 import { formatDateTime, formatPHP, resolveProductImage } from '../../lib/productAssets';
@@ -54,9 +51,6 @@ const HARDWARE_STORAGE_KEY = 'argivit-pos-hardware-v1';
 const DEFAULT_HARDWARE_SETTINGS: PosHardwareSettings = {
   hidWedgeArmed: true,
   scannerSound: true,
-  autoPrintReceipt: false,
-  autoCutPaper: true,
-  openCashDrawer: true,
   serialBaudRate: 9600,
 };
 
@@ -82,6 +76,7 @@ interface PosTerminalViewProps {
 
 export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps) {
   const queryClient = useQueryClient();
+  const t = useTranslate();
   const {
     offlineMode,
     setOfflineMode,
@@ -128,7 +123,6 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
   const [serialScannerHandle, setSerialScannerHandle] = useState<{ close: () => Promise<void> } | null>(null);
   const [isHardwareBusy, setIsHardwareBusy] = useState(false);
   const [previewReceiptSale, setPreviewReceiptSale] = useState<Sale | null>(null);
-  const [printSaleTarget, setPrintSaleTarget] = useState<Sale | null>(null);
   const checkoutAttempt = useRef<{ cart: typeof cart; id: string } | null>(null);
 
   const barcodeInputRef = useRef<HTMLInputElement | null>(null);
@@ -203,57 +197,6 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
     });
   }, []);
 
-  const triggerEscPosPrint = useCallback(
-    async (sale: Sale) => {
-      if (!connectedPrinter) return;
-      setIsHardwareBusy(true);
-      try {
-        const bytes = buildEscPosReceiptBytes(sale, {
-          cashierName,
-          autoCut: hardwareSettings.autoCutPaper,
-          openCashDrawer: hardwareSettings.openCashDrawer,
-          printBarcode: true,
-        });
-        await sendEscPosToPrinter(connectedPrinter, bytes);
-        setFeedback({
-          tone: 'green',
-          text: `Sent 80mm receipt ${sale.sale_number} to ${connectedPrinter.label}.`,
-        });
-      } catch (err) {
-        setFeedback({
-          tone: 'red',
-          text:
-            err instanceof Error
-              ? `ESC/POS print error: ${err.message}`
-              : 'ESC/POS printer write failed.',
-        });
-      } finally {
-        setIsHardwareBusy(false);
-      }
-    },
-    [cashierName, connectedPrinter, hardwareSettings.autoCutPaper, hardwareSettings.openCashDrawer]
-  );
-
-  const triggerBrowserPrint80mm = useCallback((sale: Sale) => {
-    setPrintSaleTarget(sale);
-    requestAnimationFrame(() => {
-      setTimeout(() => {
-        window.print();
-      }, 60);
-    });
-  }, []);
-
-  const printReceipt80mm = useCallback(
-    (sale: Sale) => {
-      if (connectedPrinter) {
-        void triggerEscPosPrint(sale);
-      } else {
-        triggerBrowserPrint80mm(sale);
-      }
-    },
-    [connectedPrinter, triggerBrowserPrint80mm, triggerEscPosPrint]
-  );
-
   const checkoutMutation = useMutation({
     networkMode: 'always',
     mutationFn: async (event: OfflineSyncEventPayload) => {
@@ -273,7 +216,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
         } catch (error) {
           if (!isPosConnectionError(error) && !(error instanceof ApiError && [502, 503, 504].includes(error.status))) throw error;
           setOfflineMode(true);
-          if (event.payload.payment_method !== 'cash') throw new Error('Server unavailable. Reconnect to finish this non-cash transaction.');
+          if (event.payload.payment_method !== 'cash') throw new Error(t('Server unavailable. Reconnect to finish this non-cash transaction.'));
         }
       }
 
@@ -282,14 +225,14 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
         const product = catalog.find((p) => p.id === item.product_id && p.status === 'active');
         const quantity = (requested.get(item.product_id) ?? 0) + item.quantity_base;
         if (!product || !validateStockAvailability(quantity, product.stock_base).ok) {
-          throw new Error(`There isn’t enough stock in the saved catalog for ${item.product_name}.`);
+          throw new Error(t('There isn’t enough stock in the saved catalog for {product}.', { product: item.product_name }));
         }
         requested.set(item.product_id, quantity);
       }
       try {
         await enqueueOfflineEvent(event);
       } catch {
-        throw new Error('The register could not save the sale. The cart is still open.');
+        throw new Error(t('The register could not save the sale. The cart is still open.'));
       }
       const saleId = event.payload.sale_id;
       const sale: Sale = {
@@ -312,24 +255,21 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
       setPendingConfirm(null);
       clearCart();
       setLastReceipt(sale);
-      setPrintSaleTarget(sale);
+      if (sale.payment_method === 'cash') setPreviewReceiptSale(sale);
       if (queued) {
-        setFeedback({ tone: 'amber', text: 'Cash sale saved on this computer. It will sync when the server is reachable.' });
+        setFeedback({ tone: 'amber', text: t('Cash sale saved on this computer. It will sync when the server is reachable.') });
       } else {
-        setFeedback({ tone: 'green', text: `Sale ${sale.sale_number} completed.` });
+        setFeedback({ tone: 'green', text: t('Sale {sale} completed.', { sale: sale.sale_number }) });
         for (const key of ['pos-product-search', 'pos-catalog-cache', 'pos-sales', 'reports-overview']) {
           void queryClient.invalidateQueries({ queryKey: [key] });
         }
-      }
-      if (hardwareSettings.autoPrintReceipt) {
-        printReceipt80mm(sale);
       }
     },
     onError: (err) => {
       setPendingConfirm(null);
       setFeedback({
         tone: 'red',
-        text: err instanceof Error ? err.message : 'Checkout failed.',
+        text: err instanceof Error ? err.message : t('Checkout failed.'),
       });
     },
   });
@@ -343,14 +283,14 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
       setScannedOrder(order);
       setFeedback({
         tone: 'green',
-        text: `Loaded pre-order ${order.order_number} (${order.shareholder_name}).`,
+        text: t('Loaded pre-order {order} ({member}).', { order: order.order_number, member: order.shareholder_name ?? '' }),
       });
     },
     onError: (err) => {
       setScannedOrder(null);
       setFeedback({
         tone: 'red',
-        text: err instanceof ApiError ? err.message : 'Unable to find pre-order token.',
+        text: err instanceof ApiError ? err.message : t('Unable to find pre-order token.'),
       });
     },
   });
@@ -368,21 +308,18 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
       setScannedOrder(null);
       setTokenInput('');
       setLastReceipt(sale);
-      setPrintSaleTarget(sale);
-      setFeedback({ tone: 'green', text: `Pre-order fulfilled as POS sale ${sale.sale_number}.` });
+      setPreviewReceiptSale(sale);
+      setFeedback({ tone: 'green', text: t('Pre-order fulfilled as POS sale {sale}.', { sale: sale.sale_number }) });
       queryClient.invalidateQueries({ queryKey: ['pos-product-search'] });
       queryClient.invalidateQueries({ queryKey: ['pos-catalog-cache'] });
       queryClient.invalidateQueries({ queryKey: ['pos-sales'] });
       queryClient.invalidateQueries({ queryKey: ['orders'] });
-      if (hardwareSettings.autoPrintReceipt) {
-        printReceipt80mm(sale);
-      }
     },
     onError: (err) => {
       setPendingConfirm(null);
       setFeedback({
         tone: 'red',
-        text: err instanceof ApiError ? err.message : 'Unable to fulfill pre-order.',
+        text: err instanceof ApiError ? err.message : t('Unable to fulfill pre-order.'),
       });
     },
   });
@@ -404,7 +341,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
       setReturningSale(null);
       setFeedback({
         tone: 'green',
-        text: `Return processed (${formatPHP(res.refund_total)} refunded and stock restored).`,
+        text: t('Return processed ({total} refunded and stock restored).', { total: formatPHP(res.refund_total) }),
       });
       queryClient.invalidateQueries({ queryKey: ['pos-sales'] });
       queryClient.invalidateQueries({ queryKey: ['pos-product-search'] });
@@ -414,7 +351,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
       setPendingConfirm(null);
       setFeedback({
         tone: 'red',
-        text: err instanceof ApiError ? err.message : 'Return failed.',
+        text: err instanceof ApiError ? err.message : t('Return failed.'),
       });
     },
   });
@@ -428,7 +365,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
     }));
     if (items.some((item) => item.quantity_base <= 0)) {
       setPendingConfirm(null);
-      setFeedback({ tone: 'red', text: 'Each item must have a positive quantity at the supported precision.' });
+      setFeedback({ tone: 'red', text: t('Each item must have a positive quantity at the supported precision.') });
       return;
     }
     const saleId = checkoutAttempt.current?.cart === cart ? checkoutAttempt.current.id : createPosSaleId();
@@ -458,7 +395,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
       case 'fulfill':
         if (offlineMode) {
           setPendingConfirm(null);
-          setFeedback({ tone: 'amber', text: 'Reconnect to fulfill pre-orders.' });
+          setFeedback({ tone: 'amber', text: t('Reconnect to fulfill pre-orders.') });
           break;
         }
         fulfillMutation.mutate(pendingConfirm.order.id);
@@ -466,7 +403,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
       case 'return':
         if (offlineMode) {
           setPendingConfirm(null);
-          setFeedback({ tone: 'amber', text: 'Reconnect to process returns.' });
+          setFeedback({ tone: 'amber', text: t('Reconnect to process returns.') });
           break;
         }
         returnMutation.mutate(pendingConfirm.sale);
@@ -485,43 +422,43 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
         switch (pendingConfirm.kind) {
           case 'checkout':
             return {
-              title: offlineMode ? 'Confirm Offline Cash Sale' : 'Confirm POS Checkout Sale',
+              title: offlineMode ? t('Confirm Offline Cash Sale') : t('Confirm POS Checkout Sale'),
               description: offlineMode
-                ? 'Save this transaction to the local offline outbox queue for later synchronization.'
-                : 'Complete this sale, record payment, and deduct stock from central warehouse balances.',
+                ? t('Save this transaction to the local offline outbox queue for later synchronization.')
+                : t('Complete this sale, record payment, and deduct stock from central warehouse balances.'),
               details: [
-                { label: 'Line Items', value: `${cart.length} line(s)` },
-                { label: 'Payment Method', value: paymentMethod.replace('_', ' ').toUpperCase() },
-                { label: 'Total Due', value: formatPHP(getTotal()) },
+                { label: t('Line Items'), value: t('{count} line(s)', { count: cart.length }) },
+                { label: t('Payment Method'), value: t(paymentMethod === 'bank_transfer' ? 'bank transfer' : paymentMethod).toUpperCase() },
+                { label: t('Total Due'), value: formatPHP(getTotal()) },
               ],
-              confirmLabel: offlineMode ? 'Save Offline Sale' : 'Complete Sale',
+              confirmLabel: offlineMode ? t('Save Offline Sale') : t('Complete Sale'),
               tone: offlineMode ? 'amber' : 'green',
             };
           case 'fulfill':
             return {
-              title: 'Confirm Pre-Order Fulfillment',
+              title: t('Confirm Pre-Order Fulfillment'),
               description:
-                'Convert this confirmed shareholder pre-order into a completed POS sale and deduct stock.',
+                t('Convert this confirmed shareholder pre-order into a completed POS sale and deduct stock.'),
               details: [
-                { label: 'Order Number', value: pendingConfirm.order.order_number },
-                { label: 'Token', value: pendingConfirm.order.token_code },
-                { label: 'Payment Method', value: paymentMethod.replace('_', ' ').toUpperCase() },
-                { label: 'Total', value: formatPHP(pendingConfirm.order.total) },
+                { label: t('Order Number'), value: pendingConfirm.order.order_number },
+                { label: t('Token'), value: pendingConfirm.order.token_code },
+                { label: t('Payment Method'), value: t(paymentMethod === 'bank_transfer' ? 'bank transfer' : paymentMethod).toUpperCase() },
+                { label: t('Total'), value: formatPHP(pendingConfirm.order.total) },
               ],
-              confirmLabel: 'Fulfill & Deduct Stock',
+              confirmLabel: t('Fulfill & Deduct Stock'),
               tone: 'green',
             };
           case 'return':
             return {
-              title: 'Confirm Sale Return & Refund',
+              title: t('Confirm Sale Return & Refund'),
               description:
-                'Refund this sale and restore the sold base-unit quantities back into inventory.',
+                t('Refund this sale and restore the sold base-unit quantities back into inventory.'),
               details: [
-                { label: 'Sale Number', value: pendingConfirm.sale.sale_number },
-                { label: 'Refund Total', value: formatPHP(pendingConfirm.sale.total) },
-                { label: 'Reason', value: pendingConfirm.reason },
+                { label: t('Sale Number'), value: pendingConfirm.sale.sale_number },
+                { label: t('Refund Total'), value: formatPHP(pendingConfirm.sale.total) },
+                { label: t('Reason'), value: pendingConfirm.reason },
               ],
-              confirmLabel: 'Confirm Refund',
+              confirmLabel: t('Confirm Refund'),
               tone: 'red',
             };
         }
@@ -537,7 +474,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
         setTokenInput(classified.normalized);
         if (hardwareSettings.scannerSound) playScannerBeep(true);
         if (offlineMode) {
-          setFeedback({ tone: 'amber', text: 'Reconnect to look up pre-orders.' });
+          setFeedback({ tone: 'amber', text: t('Reconnect to look up pre-orders.') });
           return;
         }
         scanMutation.mutate(classified.normalized);
@@ -563,7 +500,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
         if (hardwareSettings.scannerSound) playScannerBeep(false);
         setFeedback({
           tone: 'red',
-          text: `No active product matched scanned 1D barcode "${code}".`,
+          text: t('No active product matched scanned 1D barcode "{code}".', { code }),
         });
         return;
       }
@@ -573,7 +510,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
         if (hardwareSettings.scannerSound) playScannerBeep(false);
         setFeedback({
           tone: 'red',
-          text: `${matched.name} has no selling unit configured.`,
+          text: t('{product} has no selling unit configured.', { product: matched.name }),
         });
         return;
       }
@@ -590,7 +527,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
       if (hardwareSettings.scannerSound) playScannerBeep(true);
       setFeedback({
         tone: 'green',
-        text: `1D Scan: Added 1 × ${unit.unit_name} ${matched.name} (${matched.barcode || matched.sku}).`,
+        text: t('1D Scan: Added 1 × {unit} {product} ({code}).', { unit: unit.unit_name, product: matched.name, code: matched.barcode || matched.sku }),
       });
     },
     [
@@ -598,6 +535,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
       catalogCacheQuery.data,
       hardwareSettings.scannerSound,
       offlineMode,
+      t,
       scanMutation,
     ]
   );
@@ -674,7 +612,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
   function handleScanSubmit(e: FormEvent) {
     e.preventDefault();
     if (offlineMode) {
-      setFeedback({ tone: 'amber', text: 'Reconnect to look up pre-orders.' });
+      setFeedback({ tone: 'amber', text: t('Reconnect to look up pre-orders.') });
       return;
     }
     if (!tokenInput.trim()) return;
@@ -736,7 +674,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
     }
   }
 
-  function handleTestPrint80mm() {
+  function handlePreviewReceipt() {
     const sampleSale: Sale = lastReceipt || {
       id: 'test-80mm',
       sale_number: 'TEST-80MM-0001',
@@ -783,7 +721,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
                 : 'bg-[#F7F9F8] text-[#475569] hover:text-[#0F172A]'
             }`}
           >
-            Checkout Register
+            {t('Checkout Register')}
           </button>
           <button
             type="button"
@@ -795,7 +733,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
                 : 'bg-[#F7F9F8] text-[#475569] hover:text-[#0F172A]'
             }`}
           >
-            Sales & Returns
+            {t('Sales & Returns')}
           </button>
         </div>
 
@@ -808,7 +746,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
             className="inline-flex items-center gap-1.5 rounded-lg border border-[#CBD5E1] bg-white px-3 py-1.5 text-xs font-medium text-[#334155] transition-colors hover:border-[#15803D] hover:text-[#15803D] whitespace-nowrap"
           >
             <ScanBarcode className="h-3.5 w-3.5 text-[#15803D]" />
-            <span>1D Scanner & 80mm Printer</span>
+            <span>{t('1D Scanner & 80mm Printer')}</span>
           </button>
 
           <span
@@ -818,12 +756,12 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
             }`}
           >
             {offlineMode ? <WifiOff className="h-3.5 w-3.5" /> : <Wifi className="h-3.5 w-3.5" />}
-            {offlineMode ? 'Offline · Cash only' : 'Online'}
+            {t(offlineMode ? 'Offline · Cash only' : 'Online')}
           </span>
           {offlineOutbox.length > 0 && (
             <span role="status" className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600">
               {isSyncing && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
-              {offlineOutbox.length} {isSyncing ? 'syncing' : 'pending sync'}
+              {offlineOutbox.length} {t(isSyncing ? 'syncing' : 'pending sync')}
             </span>
           )}
         </div>
@@ -837,7 +775,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
       )}
       {offlineMode && !catalogCacheQuery.data && (
         <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
-          Connect once to download the product catalog before taking offline sales.
+          {t('Connect once to download the product catalog before taking offline sales.')}
         </p>
       )}
       {feedback ? (
@@ -857,7 +795,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
             onClick={() => setFeedback(null)}
             className="text-xs font-medium underline whitespace-nowrap"
           >
-            Dismiss
+            {t('Dismiss')}
           </button>
         </div>
       ) : null}
@@ -873,10 +811,10 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
                   <ScanBarcode className="h-4 w-4 text-[#15803D]" />
                   <div>
                     <h2 className="font-display text-sm font-semibold text-[#0F172A]">
-                      Wired 1D Barcode Scanner
+                      {t('Wired 1D Barcode Scanner')}
                     </h2>
                     <p className="text-xs text-[#64748B]">
-                      Scan 1D product barcode (e.g. 480001001001) or pickup token (ARG-ORD-...) to auto-add to cart
+                      {t('Scan 1D product barcode (e.g. 480001001001) or pickup token (ARG-ORD-...) to auto-add to cart')}
                     </p>
                   </div>
                 </div>
@@ -892,7 +830,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
                   }`}
                 >
                   <Sliders className="h-3 w-3" />
-                  {hardwareSettings.hidWedgeArmed ? 'USB HID Wedge: Armed' : 'Input Focus Only'}
+                  {t(hardwareSettings.hidWedgeArmed ? 'USB HID Wedge: Armed' : 'Input Focus Only')}
                 </button>
               </div>
 
@@ -902,10 +840,10 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
                   <input
                     ref={barcodeInputRef}
                     type="text"
-                    aria-label="Wired 1D barcode scanner input"
+                    aria-label={t('Wired 1D barcode scanner input')}
                     value={barcodeInput}
                     onChange={(e) => setBarcodeInput(e.target.value)}
-                    placeholder="Focus here or pull wired 1D scanner trigger (480001001001)..."
+                    placeholder={t('Focus here or pull wired 1D scanner trigger (480001001001)...')}
                     className="w-full rounded-lg border border-[#CBD5E1] bg-white py-2 pl-9 pr-3 font-mono text-sm focus:border-[#15803D] focus:outline-none focus:ring-2 focus:ring-[#15803D]/20"
                   />
                 </div>
@@ -913,7 +851,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
                   type="submit"
                   className="rounded-lg bg-[#15803D] px-4 py-2 text-xs font-semibold text-white hover:bg-[#166534] whitespace-nowrap shrink-0"
                 >
-                  Scan / Add
+                  {t('Scan / Add')}
                 </button>
               </form>
             </div>
@@ -923,10 +861,10 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h2 className="font-display text-base font-semibold text-[#0F172A]">
-                    Product & Barcode Search
+                    {t('Product & Barcode Search')}
                   </h2>
                   <p className="text-xs text-[#64748B]">
-                    Indexed lookup by SKU prefix, exact barcode, or product name (max 10 results)
+                    {t('Indexed lookup by SKU prefix, exact barcode, or product name (max 10 results)')}
                   </p>
                 </div>
               </div>
@@ -935,10 +873,10 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
                 <Search className="pointer-events-none absolute left-3.5 top-2.5 h-4 w-4 text-[#64748B]" />
                 <input
                   type="search"
-                  aria-label="Search POS products by name, SKU, or barcode"
+                  aria-label={t('Search POS products by name, SKU, or barcode')}
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
-                  placeholder="Search SKU (AGR-FERT), barcode (480001001001), or product name..."
+                  placeholder={t('Search SKU (AGR-FERT), barcode (480001001001), or product name...')}
                   className="w-full rounded-lg border border-[#CBD5E1] bg-white py-2 pl-10 pr-4 text-sm focus:border-[#15803D] focus:outline-none focus:ring-2 focus:ring-[#15803D]/20"
                 />
               </div>
@@ -946,8 +884,8 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
               {/* 4 Standard UI States: Empty query, Loading, Error, Empty results, Success */}
               {debouncedQuery.length === 0 ? (
                 <EmptyState
-                  title="Start typing to search catalog"
-                  description="Enter at least 1 character of a product name, SKU prefix, or scan a barcode."
+                  title={t('Start typing to search catalog')}
+                  description={t('Enter at least 1 character of a product name, SKU prefix, or scan a barcode.')}
                 />
               ) : !offlineMode && searchQuery.isLoading ? (
                 <LoadingSkeleton rows={3} />
@@ -958,8 +896,8 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
                 />
               ) : (offlineMode ? offlineResults : searchQuery.data ?? []).length === 0 ? (
                 <EmptyState
-                  title="No matching products"
-                  description={`No active inventory items matched "${debouncedQuery}". Try searching "AGR", "Fertilizer", or "Seeds".`}
+                  title={t('No matching products')}
+                  description={t('No active inventory items matched "{query}". Try searching "AGR", "Fertilizer", or "Seeds".', { query: debouncedQuery })}
                 />
               ) : (
                 <div className="grid max-h-[640px] grid-cols-[repeat(auto-fill,minmax(176px,1fr))] gap-2.5 overflow-y-auto pr-0.5">
@@ -1033,10 +971,10 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
             <div className="rounded-xl border border-[#E2E8E4] bg-white p-5 space-y-4">
               <div>
                 <h2 className="font-display text-base font-semibold text-[#0F172A]">
-                  Online Pre-Order Token Fulfillment
+                  {t('Online Pre-Order Token Fulfillment')}
                 </h2>
                 <p className="text-xs text-[#64748B]">
-                  Scan or enter a shareholder pickup token (e.g. ARG-ORD-8821) to convert an online pre-order into a POS sale
+                  {t('Scan or enter a shareholder pickup token (e.g. ARG-ORD-8821) to convert an online pre-order into a POS sale')}
                 </p>
               </div>
 
@@ -1045,10 +983,10 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
                   <QrCode className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-[#64748B]" />
                   <input
                     type="text"
-                    aria-label="Pre-order fulfillment token"
+                    aria-label={t('Pre-order fulfillment token')}
                     value={tokenInput}
                     onChange={(e) => setTokenInput(e.target.value)}
-                    placeholder="Enter token code (e.g. ARG-ORD-8821)"
+                    placeholder={t('Enter token code (e.g. ARG-ORD-8821)')}
                     className="w-full rounded-lg border border-[#CBD5E1] bg-white py-2 pl-9 pr-3 font-mono text-sm focus:border-[#15803D] focus:outline-none focus:ring-2 focus:ring-[#15803D]/20"
                   />
                 </div>
@@ -1057,7 +995,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
                   disabled={scanMutation.isPending}
                   className="rounded-lg border border-[#15803D] bg-white px-4 py-2 text-xs font-medium text-[#15803D] hover:bg-[#F0FDF4] whitespace-nowrap shrink-0"
                 >
-                  {scanMutation.isPending ? 'Checking...' : 'Retrieve Order'}
+                  {scanMutation.isPending ? t('Checking...') : t('Retrieve Order')}
                 </button>
               </form>
 
@@ -1069,7 +1007,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
                         {scannedOrder.order_number} · {scannedOrder.token_code}
                       </div>
                       <div className="text-xs text-[#475569]">
-                        Shareholder: {scannedOrder.shareholder_name} ({scannedOrder.membership_number})
+                        {t('Shareholder')}: {scannedOrder.shareholder_name} ({scannedOrder.membership_number})
                       </div>
                     </div>
                     <div className="font-mono text-base font-bold text-[#15803D] tabular-nums">
@@ -1092,7 +1030,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
                       onClick={() => setScannedOrder(null)}
                       className="rounded-lg border border-[#CBD5E1] bg-white px-3 py-1.5 text-xs font-medium text-[#334155]"
                     >
-                      Clear
+                      {t('Clear')}
                     </button>
                     <button
                       type="button"
@@ -1100,7 +1038,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
                       onClick={() => setPendingConfirm({ kind: 'fulfill', order: scannedOrder })}
                       className="rounded-lg bg-[#15803D] px-4 py-1.5 text-xs font-medium text-white hover:bg-[#166534]"
                     >
-                      {fulfillMutation.isPending ? 'Fulfilling...' : 'Fulfill & Deduct Stock'}
+                      {fulfillMutation.isPending ? t('Fulfilling...') : t('Fulfill & Deduct Stock')}
                     </button>
                   </div>
                 </div>
@@ -1113,7 +1051,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
             <div className="rounded-xl border border-[#E2E8E4] bg-white p-4 sm:p-5 space-y-4">
               <div className="flex items-center justify-between border-b border-[#E2E8E4] pb-3">
                 <h2 className="font-display text-base font-semibold text-[#0F172A]">
-                  Current Transaction
+                  {t('Current Transaction')}
                 </h2>
                 {cart.length > 0 ? (
                   <button
@@ -1121,14 +1059,14 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
                     onClick={clearCart}
                     className="text-xs font-medium text-[#DC2626] hover:underline"
                   >
-                    Clear Cart
+                    {t('Clear Cart')}
                   </button>
                 ) : null}
               </div>
 
               {cart.length === 0 ? (
                 <p className="py-8 text-center text-sm text-[#64748B]">
-                  Select a product unit on the left to begin checkout.
+                  {t('Select a product unit on the left to begin checkout.')}
                 </p>
               ) : (
                 <div className="divide-y divide-[#E2E8E4]">
@@ -1144,7 +1082,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
                         </div>
                         <button
                           type="button"
-                          aria-label={`Remove ${line.product_name}`}
+                          aria-label={t('Remove {product}', { product: line.product_name })}
                           onClick={() => removeLine(line.product_id, line.unit_id)}
                           className="rounded p-1 text-[#64748B] hover:bg-red-50 hover:text-[#DC2626]"
                         >
@@ -1156,7 +1094,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
                         <div className="inline-flex items-center rounded-lg border border-[#CBD5E1]">
                           <button
                             type="button"
-                            aria-label={`Decrease quantity for ${line.product_name}`}
+                            aria-label={t('Decrease quantity for {product}', { product: line.product_name })}
                             onClick={() => updateQty(line.product_id, line.unit_id, line.quantity - 1)}
                             className="px-2.5 py-1 text-[#334155] hover:bg-[#F7F9F8]"
                           >
@@ -1167,7 +1105,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
                           </span>
                           <button
                             type="button"
-                            aria-label={`Increase quantity for ${line.product_name}`}
+                            aria-label={t('Increase quantity for {product}', { product: line.product_name })}
                             onClick={() => updateQty(line.product_id, line.unit_id, line.quantity + 1)}
                             className="px-2.5 py-1 text-[#334155] hover:bg-[#F7F9F8]"
                           >
@@ -1192,7 +1130,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
               <div className="border-t border-[#E2E8E4] pt-4 space-y-4">
                 <div>
                   <span className="block text-xs font-medium text-[#475569] mb-1.5">
-                    Payment Method
+                    {t('Payment Method')}
                   </span>
                   <div className="grid grid-cols-3 gap-1.5">
                     {(['cash', 'gcash', 'bank_transfer'] as const).map((method) => (
@@ -1207,14 +1145,14 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
                             : 'border-[#E2E8E4] bg-white text-[#475569] hover:bg-[#F7F9F8]'
                         }`}
                       >
-                        {method.replace('_', ' ')}
+                        {t(method === 'bank_transfer' ? 'bank transfer' : method)}
                       </button>
                     ))}
                   </div>
                 </div>
 
                 <div className="flex items-baseline justify-between">
-                  <span className="text-sm font-medium text-[#475569]">Total Due</span>
+                  <span className="text-sm font-medium text-[#475569]">{t('Total Due')}</span>
                   <span className="font-mono text-2xl font-bold text-[#0F172A] tabular-nums">
                     {formatPHP(getTotal())}
                   </span>
@@ -1229,10 +1167,10 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
                   <CheckCircle2 className="h-4 w-4" />
                   <span>
                     {checkoutMutation.isPending
-                      ? 'Posting Transaction...'
+                      ? t('Posting Transaction...')
                       : offlineMode
-                      ? 'Save Cash Sale'
-                      : 'Complete Sale'}
+                      ? t('Save Cash Sale')
+                      : t('Complete Sale')}
                   </span>
                 </button>
               </div>
@@ -1243,11 +1181,11 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 font-display text-sm font-semibold text-[#0F172A]">
                     <Receipt className="h-4 w-4 text-[#15803D]" />
-                    <span>80mm Thermal Receipt</span>
+                    <span>{t('80mm Thermal Receipt')}</span>
                   </div>
                   <StatusLabel
                     tone={lastReceipt.source === 'offline_sync' ? 'amber' : 'green'}
-                    label={lastReceipt.source === 'offline_sync' ? 'Offline Receipt' : 'Posted'}
+                    label={lastReceipt.source === 'offline_sync' ? t('Offline Receipt') : t('Posted')}
                   />
                 </div>
 
@@ -1255,22 +1193,13 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
                   <ThermalReceipt80mmSheet sale={lastReceipt} cashierName={cashierName} />
                 </div>
 
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    disabled={isHardwareBusy}
-                    onClick={() => printReceipt80mm(lastReceipt)}
-                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-[#15803D] px-3 py-2 text-xs font-semibold text-white hover:bg-[#166534] disabled:opacity-50 whitespace-nowrap"
-                  >
-                    <Printer className="h-3.5 w-3.5" />
-                    {connectedPrinter ? 'Print ESC/POS (80mm)' : 'Print 80mm Receipt'}
-                  </button>
+                <div>
                   <button
                     type="button"
                     onClick={() => setPreviewReceiptSale(lastReceipt)}
-                    className="rounded-lg border border-[#CBD5E1] bg-white px-3 py-2 text-xs font-medium text-[#334155] hover:bg-[#F7F9F8] whitespace-nowrap"
+                    className="w-full rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-medium text-emerald-800 hover:bg-emerald-50"
                   >
-                    Preview
+                    {t('Preview Receipt')}
                   </button>
                 </div>
               </div>
@@ -1282,10 +1211,10 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
         <div className="rounded-xl border border-[#E2E8E4] bg-white">
           <div className="border-b border-[#E2E8E4] px-5 py-4">
             <h2 className="font-display text-base font-semibold text-[#0F172A]">
-              POS Sales & Returns Ledger
+              {t('POS Sales & Returns Ledger')}
             </h2>
             <p className="text-xs text-[#64748B]">
-              Process returns to refund customers and restore base-unit inventory balances
+              {t('Process returns to refund customers and restore base-unit inventory balances')}
             </p>
           </div>
 
@@ -1305,13 +1234,13 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
               <table className="w-full text-left text-sm">
                 <thead className="border-b border-[#E2E8E4] bg-[#F7F9F8] text-xs font-medium text-[#475569]">
                   <tr>
-                    <th className="px-5 py-3">Sale #</th>
-                    <th className="px-5 py-3">Source</th>
-                    <th className="px-5 py-3">Items</th>
-                    <th className="px-5 py-3">Status</th>
-                    <th className="px-5 py-3 text-right">Total</th>
-                    <th className="px-5 py-3 text-right">Date</th>
-                    <th className="px-5 py-3 text-right">Action</th>
+                    <th className="px-5 py-3">{t('Sale #')}</th>
+                    <th className="px-5 py-3">{t('Source')}</th>
+                    <th className="px-5 py-3">{t('Items')}</th>
+                    <th className="px-5 py-3">{t('Status')}</th>
+                    <th className="px-5 py-3 text-right">{t('Total')}</th>
+                    <th className="px-5 py-3 text-right">{t('Date')}</th>
+                    <th className="px-5 py-3 text-right">{t('Action')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#E2E8E4]">
@@ -1331,7 +1260,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
                       <td className="px-5 py-3">
                         <StatusLabel
                           tone={sale.status === 'completed' ? 'green' : 'amber'}
-                          label={sale.status}
+                          label={t(sale.status)}
                         />
                       </td>
                       <td className="px-5 py-3 text-right font-mono text-xs font-semibold tabular-nums">
@@ -1347,8 +1276,8 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
                             onClick={() => setPreviewReceiptSale(sale)}
                             className="inline-flex items-center gap-1 rounded border border-[#CBD5E1] bg-white px-2.5 py-1 text-xs font-medium text-[#334155] hover:border-[#15803D] hover:text-[#15803D]"
                           >
-                            <Printer className="h-3 w-3" />
-                            80mm Receipt
+                            <Receipt className="h-3 w-3" />
+                            {t('80mm Receipt')}
                           </button>
                           {sale.status === 'completed' ? (
                             <button
@@ -1357,10 +1286,10 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
                               className="inline-flex items-center gap-1 rounded border border-[#CBD5E1] px-2.5 py-1 text-xs font-medium text-[#334155] hover:bg-[#F7F9F8]"
                             >
                               <RotateCcw className="h-3 w-3" />
-                              Return
+                              {t('Return')}
                             </button>
                           ) : (
-                            <span className="text-xs text-[#94A3B8]">Returned</span>
+                            <span className="text-xs text-[#94A3B8]">{t('Returned')}</span>
                           )}
                         </div>
                       </td>
@@ -1375,14 +1304,14 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
             <div className="border-t border-[#E2E8E4] bg-[#F7F9F8] p-5 space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="font-display text-sm font-semibold text-[#0F172A]">
-                  Confirm Return for {returningSale.sale_number} ({formatPHP(returningSale.total)})
+                  {t('Confirm Return for {sale} ({total})', { sale: returningSale.sale_number, total: formatPHP(returningSale.total) })}
                 </h3>
                 <button
                   type="button"
                   onClick={() => setReturningSale(null)}
                   className="text-xs text-[#64748B] hover:text-[#0F172A]"
                 >
-                  Cancel
+                  {t('Cancel')}
                 </button>
               </div>
               <div className="flex flex-col gap-3 sm:flex-row">
@@ -1390,7 +1319,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
                   type="text"
                   value={returnReason}
                   onChange={(e) => setReturnReason(e.target.value)}
-                  placeholder="Reason for return"
+                  placeholder={t('Reason for return')}
                   className="flex-1 rounded-lg border border-[#CBD5E1] bg-white px-3 py-2 text-sm"
                 />
                 <button
@@ -1401,7 +1330,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
                   }
                   className="rounded-lg bg-[#DC2626] px-4 py-2 text-xs font-medium text-white hover:bg-red-700 whitespace-nowrap"
                 >
-                  {returnMutation.isPending ? 'Processing...' : 'Confirm Refund & Restore Stock'}
+                  {returnMutation.isPending ? t('Processing...') : t('Confirm Refund & Restore Stock')}
                 </button>
               </div>
             </div>
@@ -1415,6 +1344,7 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
         description={posConfirmConfig?.description || ''}
         details={posConfirmConfig?.details || []}
         confirmLabel={posConfirmConfig?.confirmLabel}
+        cancelLabel={t('Cancel')}
         tone={posConfirmConfig?.tone}
         isPending={
           checkoutMutation.isPending ||
@@ -1440,36 +1370,15 @@ export function PosTerminalView({ isSyncing, syncMessage }: PosTerminalViewProps
           void serialScannerHandle?.close();
           setSerialScannerHandle(null);
         }}
-        onTestPrint80mm={handleTestPrint80mm}
+        onPreviewReceipt={handlePreviewReceipt}
         onClose={() => setHardwareModalOpen(false)}
       />
 
       <ThermalReceiptModal
         sale={previewReceiptSale}
         cashierName={cashierName}
-        connectedPrinter={connectedPrinter}
-        isPrintingEscPos={isHardwareBusy}
-        onPrintBrowser={(sale) => triggerBrowserPrint80mm(sale)}
-        onPrintEscPos={(sale) => {
-          void triggerEscPosPrint(sale);
-        }}
         onClose={() => setPreviewReceiptSale(null)}
       />
-
-      {/* Dedicated 80mm thermal roll print mount portaled to body for clean @media print */}
-      {typeof document !== 'undefined' &&
-      (printSaleTarget || previewReceiptSale || lastReceipt)
-        ? createPortal(
-            <div className="hidden print:block">
-              <ThermalReceipt80mmSheet
-                sale={(printSaleTarget || previewReceiptSale || lastReceipt)!}
-                cashierName={cashierName}
-                forPrint
-              />
-            </div>,
-            document.body
-          )
-        : null}
     </div>
   );
 }

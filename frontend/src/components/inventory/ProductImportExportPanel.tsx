@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent } from 'react';
+import { useRef, useState, type ChangeEvent } from 'react';
 import * as XLSX from 'xlsx';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -23,6 +23,7 @@ import {
 } from '../../lib/productImport';
 import {
   downloadProductImportTemplate,
+  exportProductImportErrors,
   exportProductsDataset,
   type ProductExportColumn,
 } from '../../lib/reportExport';
@@ -51,6 +52,7 @@ export function ProductImportExportPanel({
   onFeedback: (msg: { tone: 'green' | 'red'; text: string }) => void;
 }) {
   const queryClient = useQueryClient();
+  const fileSelection = useRef(0);
 
   const [selectedFile, setSelectedFile] = useState<{ name: string; format: string } | null>(null);
   const [duplicateMode, setDuplicateMode] = useState<'skip' | 'update'>('skip');
@@ -59,7 +61,7 @@ export function ProductImportExportPanel({
   const [validationErrors, setValidationErrors] = useState<ProductImportRowError[]>([]);
   const [confirmImportOpen, setConfirmImportOpen] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [chunkProgress, setChunkProgress] = useState<{ current: number; total: number } | null>(null);
+  const [chunkProgress, setChunkProgress] = useState<{ current: number; total: number; succeeded: number; failed: number } | null>(null);
   const [lastResult, setLastResult] = useState<{
     created: number;
     updated: number;
@@ -88,7 +90,8 @@ export function ProductImportExportPanel({
 
   async function handleFileSelect(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || importing) return;
+    const selection = ++fileSelection.current;
 
     setHeaderError(null);
     setValidRows([]);
@@ -100,6 +103,7 @@ export function ProductImportExportPanel({
 
     try {
       const buffer = await file.arrayBuffer();
+      if (selection !== fileSelection.current) return;
       const wb = XLSX.read(buffer, { type: 'array' });
       const sheetName = wb.SheetNames[0];
       if (!sheetName) {
@@ -124,7 +128,8 @@ export function ProductImportExportPanel({
       const nextErrors: ProductImportRowError[] = [];
 
       rawRecords.forEach((rawRow, index) => {
-        const res = validateAndNormalizeImportRow(rawRow, index + 2, categories);
+        const rowNumber = typeof rawRow.__rowNum__ === 'number' ? rawRow.__rowNum__ + 1 : index + 2;
+        const res = validateAndNormalizeImportRow(rawRow, rowNumber, categories);
         if (res.ok) {
           nextValid.push(res.row);
         } else {
@@ -135,7 +140,9 @@ export function ProductImportExportPanel({
       setValidRows(nextValid);
       setValidationErrors(nextErrors);
     } catch {
-      setHeaderError('Unable to parse file. Please upload a valid .xlsx, .xls, or .csv file.');
+      if (selection === fileSelection.current) {
+        setHeaderError('Unable to parse file. Please upload a valid .xlsx, .xls, or .csv file.');
+      }
     }
   }
 
@@ -145,7 +152,7 @@ export function ProductImportExportPanel({
     setConfirmImportOpen(false);
     setImporting(true);
     const chunks = chunkArray(validRows, PRODUCT_IMPORT_CHUNK_SIZE);
-    setChunkProgress({ current: 0, total: chunks.length });
+    setChunkProgress({ current: 0, total: chunks.length, succeeded: 0, failed: validationErrors.length });
 
     let totalCreated = 0;
     let totalUpdated = 0;
@@ -155,7 +162,6 @@ export function ProductImportExportPanel({
 
     try {
       for (let i = 0; i < chunks.length; i++) {
-        setChunkProgress({ current: i + 1, total: chunks.length });
         const res = await apiRequest<{
           created_count: number;
           updated_count: number;
@@ -181,36 +187,29 @@ export function ProductImportExportPanel({
         if (Array.isArray(res.data.failures)) {
           allFailures.push(...res.data.failures);
         }
+        setChunkProgress({ current: i + 1, total: chunks.length, succeeded: totalCreated + totalUpdated, failed: totalFailed });
       }
-
-      setLastResult({
-        created: totalCreated,
-        updated: totalUpdated,
-        skipped: totalSkipped,
-        failed: totalFailed,
-        failures: allFailures,
-      });
 
       onFeedback({
         tone: 'green',
         text: `Excel import completed: ${totalCreated} created, ${totalUpdated} updated, ${totalSkipped} skipped${totalFailed > 0 ? `, ${totalFailed} failed` : ''}.`,
       });
-      queryClient.invalidateQueries({ queryKey: ['inventory-balances'] });
-      queryClient.invalidateQueries({ queryKey: ['inventory-all-products'] });
-      queryClient.invalidateQueries({ queryKey: ['inventory-movements'] });
-      queryClient.invalidateQueries({ queryKey: ['shop-products'] });
-      queryClient.invalidateQueries({ queryKey: ['product-import-logs'] });
-      queryClient.invalidateQueries({ queryKey: ['reports-overview'] });
     } catch (err) {
       onFeedback({
         tone: 'red',
         text: err instanceof ApiError ? err.message : 'Bulk product import failed.',
       });
     } finally {
+      setLastResult({ created: totalCreated, updated: totalUpdated, skipped: totalSkipped, failed: totalFailed, failures: allFailures });
+      for (const key of ['inventory-balances', 'inventory-all-products', 'inventory-movements', 'shop-products', 'product-import-logs', 'reports-overview']) {
+        void queryClient.invalidateQueries({ queryKey: [key] });
+      }
       setImporting(false);
       setChunkProgress(null);
     }
   }
+
+  const importErrors = lastResult?.failures ?? validationErrors;
 
   function toggleColumn(col: ProductExportColumn) {
     setExportColumns((prev) =>
@@ -294,6 +293,7 @@ export function ProductImportExportPanel({
                 id="excel-import-file"
                 type="file"
                 accept=".xlsx,.xls,.csv"
+                disabled={importing}
                 onChange={handleFileSelect}
                 className="sr-only"
               />
@@ -354,21 +354,27 @@ export function ProductImportExportPanel({
                   className="rounded-lg bg-[#15803D] px-4 py-2 text-xs font-semibold text-white hover:bg-[#166534] disabled:opacity-40"
                 >
                   {importing
-                    ? `Processing Chunk ${chunkProgress?.current ?? 1}/${chunkProgress?.total ?? 1}...`
+                    ? `${chunkProgress?.current ?? 0} of ${chunkProgress?.total ?? 1} batches complete…`
                     : `Import ${validRows.length} Valid Product(s)`}
                 </button>
               </div>
 
               {chunkProgress ? (
-                <div className="h-2 w-full overflow-hidden rounded-full bg-[#EEF3F0]">
-                  <div
-                    className="h-full bg-[#15803D] transition-all"
-                    style={{
-                      width: `${Math.round((chunkProgress.current / chunkProgress.total) * 100)}%`,
-                    }}
-                  />
+                <div className="space-y-1.5">
+                  <div role="progressbar" aria-label="Product import batches completed" aria-valuemin={0} aria-valuemax={chunkProgress.total} aria-valuenow={chunkProgress.current}
+                    className="h-2 w-full overflow-hidden rounded-full bg-[#EEF3F0]">
+                    <div className="h-full bg-[#15803D] transition-all" style={{ width: `${Math.round((chunkProgress.current / chunkProgress.total) * 100)}%` }} />
+                  </div>
+                  <p aria-live="polite" className="text-xs text-slate-600">{chunkProgress.succeeded} saved · {chunkProgress.failed} failed</p>
                 </div>
               ) : null}
+
+              {importErrors.length > 0 && !importing && (
+                <button type="button" onClick={() => exportProductImportErrors(importErrors, selectedFile.name)}
+                  className="inline-flex items-center gap-2 rounded-lg border border-[#CBD5E1] bg-white px-3 py-2 text-xs font-semibold text-[#14532D] hover:bg-emerald-50">
+                  <Download aria-hidden="true" className="h-3.5 w-3.5" /> Download error report ({importErrors.length})
+                </button>
+              )}
 
               {validationErrors.length > 0 ? (
                 <div className="max-h-40 overflow-y-auto rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-[#92400E]">
@@ -549,6 +555,12 @@ export function ProductImportExportPanel({
                   <tr key={log.id}>
                     <td className="px-4 py-3 font-mono font-medium text-[#0F172A]">
                       {log.filename}
+                      {log.failures.length > 0 && (
+                        <button type="button" onClick={() => exportProductImportErrors(log.failures, log.filename)}
+                          className="mt-1 block text-left font-sans text-xs font-semibold text-[#14532D] underline underline-offset-2">
+                          Download error report ({log.failures.length})
+                        </button>
+                      )}
                     </td>
                     <td className="px-4 py-3 capitalize text-[#475569]">{log.duplicate_mode}</td>
                     <td className="px-4 py-3 text-right font-mono tabular-nums text-[#15803D]">

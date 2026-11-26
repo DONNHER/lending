@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, apiRequest } from '../../lib/api';
+import { useTranslate, type MessageKey } from '../../lib/language';
 import { isPosConnectionError } from '../../lib/posOffline';
 import { canAccessWorkspace, useAppStore } from '../../stores/app-store';
 
 export function usePosSync() {
   const queryClient = useQueryClient();
+  const t = useTranslate();
   const { session, terminalId, offlineMode, setOfflineMode, offlineOutbox, removeSyncedEvents } = useAppStore();
   const user = session?.user;
   const enabled = Boolean(user && canAccessWorkspace(user.role, 'pos') && !session?.impersonated_by);
-  const [syncMessage, setSyncMessage] = useState<{ tone: 'green' | 'amber' | 'red'; text: string } | null>(null);
+  const [syncMessage, setSyncMessage] = useState<{ tone: 'green' | 'amber' | 'red'; message: MessageKey; count?: number } | null>(null);
   const attempted = useRef('');
   const health = useQuery({
     queryKey: ['api-connectivity', user?.id],
@@ -67,19 +69,19 @@ export function usePosSync() {
         ['processed', 'duplicate_ignored', 'conflict'].includes(result.status)
       );
       setSyncMessage(conflicts.length
-        ? { tone: 'amber', text: `${conflicts.length} offline sale(s) need manager review in Settings → Offline Sync & Conflicts.` }
-        : { tone: 'green', text: `${completed.length} offline sale(s) synced.` });
+        ? { tone: 'amber', message: '{count} offline sale(s) need manager review in Settings → Offline Sync & Conflicts.', count: conflicts.length }
+        : { tone: 'green', message: '{count} offline sale(s) synced.', count: completed.length });
       try {
         await removeSyncedEvents(completed.map((result) => result.event_id));
       } catch {
-        setSyncMessage({ tone: 'red', text: 'Sales reached the server, but the register could not update its queue.' });
+        setSyncMessage({ tone: 'red', message: 'Sales reached the server, but the register could not update its queue.' });
       }
       await Promise.all(['pos-catalog-cache', 'pos-product-search', 'pos-sales', 'reports-overview', 'sync-telemetry']
         .map((key) => queryClient.invalidateQueries({ queryKey: [key] })));
     },
     onError: (error) => {
       if (isPosConnectionError(error)) setOfflineMode(true);
-      setSyncMessage({ tone: 'red', text: error instanceof ApiError && error.status === 401
+      setSyncMessage({ tone: 'red', message: error instanceof ApiError && error.status === 401
         ? 'Sign in again to sync saved sales.'
         : 'Sales are still saved on this computer. Sync will retry when the server responds.' });
     },
@@ -93,5 +95,11 @@ export function usePosSync() {
     sync(pendingEvents.slice(0, 50));
   }, [enabled, offlineMode, health.isSuccess, health.dataUpdatedAt, isPending, pendingEvents, sync]);
 
-  return { isSyncing: isPending, syncMessage };
+  return {
+    isSyncing: isPending,
+    syncMessage: syncMessage && {
+      tone: syncMessage.tone,
+      text: t(syncMessage.message, { count: syncMessage.count ?? 0 }),
+    },
+  };
 }

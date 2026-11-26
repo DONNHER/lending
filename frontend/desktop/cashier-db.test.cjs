@@ -40,3 +40,11 @@ test('desktop SQLite keeps cash sales on restart and clears only acknowledged sa
   assert.equal(register.setApiOrigin('https://other.example.com'), true);
   assert.deepEqual(register.snapshot(), { catalog: null, outbox: [] });
 });
+
+test('cashier accepts HTTP on its private network and requires HTTPS for public hosts', () => {
+  const { normalizeApiOrigin } = require('./loopback.cjs');
+  assert.equal(normalizeApiOrigin('http://192.168.95.128:8081'), 'http://192.168.95.128:8081');
+  assert.equal(normalizeApiOrigin('http://10.0.5.9:8081'), 'http://10.0.5.9:8081');
+  assert.throws(() => normalizeApiOrigin('http://203.0.113.1:8081'));
+  assert.equal(normalizeApiOrigin('https://pos.example.test'), 'https://pos.example.test');
+});

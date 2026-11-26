@@ -10,6 +10,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
@@ -50,7 +51,7 @@ class ShareholdersController extends Controller
                 'id' => $id,
                 'user_id' => $actor['id'],
                 'membership_number' => $number,
-                'verification_status' => 'pending_review',
+                'verification_status' => 'incomplete',
                 'created_at' => $now,
             ]);
             DB::table('share_capital_accounts')->insert([
@@ -76,10 +77,15 @@ class ShareholdersController extends Controller
             return Api::ok('No shareholder profile attached to this staff account.');
         }
 
+        $details = $this->membershipDetails($profile['id']);
+        $required = (float) (DB::table('share_capital_settings')->value('required_initial_capital') ?? 5000);
+
         return Api::ok('Shareholder profile retrieved.', [
             'profile' => $profile,
-            ...$this->membershipDetails($profile['id']),
-        ]);
+            ...$details,
+            'required_share_capital' => $required,
+            'loan_access' => Membership::canAccessLoans($profile, $details['capital_account']['paid_amount'] ?? 0, $required),
+        ])->header('Cache-Control', 'private, no-store');
     }
 
     public function update(Request $request): JsonResponse
@@ -92,9 +98,6 @@ class ShareholdersController extends Controller
 
         return DB::transaction(function () use ($profile, $fields) {
             DB::table('shareholder_profiles')->where('id', $profile['id'])->update($fields);
-            DB::table('shareholder_profiles')->where('id', $profile['id'])->where('verification_status', 'incomplete')
-                ->update(['verification_status' => 'pending_review']);
-
             return Api::ok('Shareholder profile updated.', [
                 'id' => $profile['id'],
                 'verification_status' => DB::table('shareholder_profiles')->where('id', $profile['id'])->value('verification_status'),
@@ -110,7 +113,7 @@ class ShareholdersController extends Controller
             return Api::fail('Shareholder profile required.', 404);
         }
         $validation = Validator::make($request->all(), [
-            'document_type' => ['required', 'in:government_id,proof_of_residency,farm_registration,membership_form'],
+            'document_type' => ['required', Rule::in(Membership::LAND_DOCUMENT_TYPES)],
             'file' => ['required', 'file', 'mimetypes:application/pdf,image/jpeg,image/png', 'max:5120'],
         ]);
         if ($validation->fails()) {
@@ -232,12 +235,19 @@ class ShareholdersController extends Controller
                 return Api::fail('Document not found.', 404);
             }
             $now = Api::now();
-            DB::table('shareholder_documents')->where('id', $id)->update([
+            $target = DB::table('shareholder_documents')->where('id', $id);
+            if (in_array($document['document_type'], Membership::LAND_DOCUMENT_TYPES, true)) {
+                $target->where('review_status', 'pending');
+            }
+            $updated = $target->update([
                 'review_status' => $decision,
                 'reviewer_id' => $actor['id'],
                 'reviewer_remarks' => $remarks,
                 'reviewed_at' => $now,
             ]);
+            if ($updated === 0) {
+                return Api::fail('This land document has already been reviewed.', 409);
+            }
             DB::table('document_reviews')->insert([
                 'id' => Api::id('drev'),
                 'document_id' => $id,
@@ -262,14 +272,19 @@ class ShareholdersController extends Controller
         $decision = $validation->validated()['decision'];
 
         return DB::transaction(function () use ($actor, $id, $decision) {
-            $updated = DB::table('shareholder_profiles')->where('id', $id)->update([
+            $profile = DB::table('shareholder_profiles')->where('id', $id)->lockForUpdate()->first(['verification_status']);
+            if ($profile === null) {
+                return Api::fail('Shareholder not found.', 404);
+            }
+            if ($decision === 'approved' && $profile->verification_status !== 'approved' && !Membership::hasApprovedLandPaper($id)) {
+                return Api::fail('Review and approve an original or notarized land paper before approving membership.', 422);
+            }
+
+            DB::table('shareholder_profiles')->where('id', $id)->update([
                 'verification_status' => $decision,
                 'approved_at' => $decision === 'approved' ? Api::now() : null,
                 'approved_by' => $decision === 'approved' ? $actor['id'] : null,
             ]);
-            if ($updated === 0) {
-                return Api::fail('Shareholder not found.', 404);
-            }
             Api::audit($actor, "shareholder.{$decision}", 'shareholder_profile', $id);
 
             return Api::ok("Shareholder membership {$decision}.", ['id' => $id, 'verification_status' => $decision]);
@@ -285,45 +300,50 @@ class ShareholdersController extends Controller
             : Api::ok('Share capital ledger retrieved.', Membership::capital($profile['id']));
     }
 
-    public function submitCapitalPayment(Request $request): JsonResponse
+    public function submitCapitalPayment(): JsonResponse
     {
-        $profile = Membership::forUser(Api::actor($request)['id']);
-        if ($profile === null) {
-            return Api::fail('Shareholder profile required.', 404);
-        }
-        $capital = Membership::capital($profile['id']);
-        if ($capital === null) {
-            return Api::fail('Share capital account not found.', 404);
-        }
-        $validation = Validator::make($request->all(), [
-            'amount' => ['required', 'numeric', 'gt:0'],
-            'payment_method' => ['required', 'in:cash,bank_transfer,gcash'],
-            'reference' => ['required', 'string', 'min:3'],
-        ]);
-        if ($validation->fails()) {
-            return Api::fail('Invalid payment submission.', 422, $validation->errors()->toArray());
-        }
-        $fields = $validation->validated();
-        $reference = trim($fields['reference']);
+        return Api::fail('Your cooperative manager records share capital payments.', 403);
+    }
 
-        return DB::transaction(function () use ($fields, $reference, $capital) {
-            if (DB::table('share_capital_payments')->where('reference', $reference)->exists()) {
-                return Api::fail('The submitted data is invalid.', 422, [
+    public function recordCapitalPayment(Request $request, string $id): JsonResponse
+    {
+        $actor = Api::actor($request);
+        $fields = $request->validate([
+            'amount' => ['required', 'numeric', 'decimal:0,2', 'min:0.01'],
+            'payment_method' => ['required', Rule::in(['cash', 'bank_transfer', 'gcash'])],
+            'reference' => ['required', 'string', 'min:3', 'max:150'],
+        ]);
+
+        return DB::transaction(function () use ($actor, $id, $fields) {
+            $account = $this->lockedCapitalAccount($id, byShareholder: true);
+            if ($account === null) {
+                return Api::fail('Share capital account not found.', 404);
+            }
+            if ($account->verification_status !== 'approved') {
+                return Api::fail('Approve the membership before recording share capital.', 422);
+            }
+
+            $now = Api::now();
+            $payment = [
+                'id' => Api::id('cap-pay'),
+                'capital_account_id' => $account->id,
+                'reference' => trim($fields['reference']),
+                'amount' => (float) $fields['amount'],
+                'payment_method' => $fields['payment_method'],
+                'status' => 'verified',
+                'verified_by' => $actor['id'],
+                'verified_at' => $now,
+                'created_at' => $now,
+            ];
+            if (DB::table('share_capital_payments')->insertOrIgnore($payment) === 0) {
+                return Api::fail('This payment reference has already been recorded.', 422, [
                     'reference' => ['This payment reference has already been recorded.'],
                 ]);
             }
-            $id = Api::id('cap-pay');
-            DB::table('share_capital_payments')->insert([
-                'id' => $id,
-                'capital_account_id' => $capital['account']['id'],
-                'reference' => $reference,
-                'amount' => (float) $fields['amount'],
-                'payment_method' => $fields['payment_method'],
-                'status' => 'pending',
-                'created_at' => Api::now(),
-            ]);
 
-            return Api::ok('Share capital payment submitted for manager verification.', ['id' => $id], null, 201);
+            $computed = $this->reconcileCapitalPayment($account, $payment, $actor, 'verified', $now);
+
+            return Api::ok('Share capital payment recorded.', $computed, null, 201);
         }, 3);
     }
 
@@ -341,43 +361,65 @@ class ShareholdersController extends Controller
             if ($payment === null) {
                 return Api::fail('Payment record not found.', 404);
             }
-            if ($payment['status'] !== 'pending') {
-                return Api::fail('Payment has already been processed.', 400);
+            $account = $this->lockedCapitalAccount($payment['capital_account_id']);
+            if ($account === null) {
+                return Api::fail('Share capital account not found.', 404);
+            }
+            if ($decision === 'verified' && $account->verification_status !== 'approved') {
+                return Api::fail('Approve the membership before verifying share capital.', 422);
             }
 
             $now = Api::now();
-            DB::table('share_capital_payments')->where('id', $id)->update([
+            $updated = DB::table('share_capital_payments')->where('id', $id)->where('status', 'pending')->update([
                 'status' => $decision,
                 'verified_by' => $actor['id'],
                 'verified_at' => $now,
             ]);
-            $accountId = $payment['capital_account_id'];
-            $account = Sql::one('SELECT required_amount FROM share_capital_accounts WHERE id = ?', [$accountId]);
-            $payments = Sql::all('SELECT amount, status FROM share_capital_payments WHERE capital_account_id = ?', [$accountId]);
-            $computed = Membership::capitalStatus((float) $account['required_amount'], $payments);
-            DB::table('share_capital_accounts')->where('id', $accountId)->update([
-                'status' => $computed['status'],
-                'fully_paid_at' => $computed['status'] === 'paid' ? $now : null,
-            ]);
-
-            if ($decision === 'verified') {
-                DB::table('payments')->insertOrIgnore([
-                    'id' => "pay-{$id}",
-                    'transaction_type' => 'share_capital',
-                    'transaction_id' => $id,
-                    'amount' => $payment['amount'],
-                    'payment_method' => $payment['payment_method'],
-                    'reference' => $payment['reference'],
-                    'created_at' => $now,
-                ]);
+            if ($updated === 0) {
+                return Api::fail('Payment has already been processed.', 400);
             }
-            Api::audit($actor, "share_capital_payment.{$decision}", 'share_capital_payment', $id, [
-                'amount' => $payment['amount'],
-                'new_account_status' => $computed['status'],
-            ]);
+
+            $computed = $this->reconcileCapitalPayment($account, $payment, $actor, $decision, $now);
 
             return Api::ok("Payment {$decision}. Account status: {$computed['status']}.", $computed);
         }, 3);
+    }
+
+    private function lockedCapitalAccount(string $id, bool $byShareholder = false): ?object
+    {
+        return DB::table('share_capital_accounts as account')
+            ->join('shareholder_profiles as member', 'member.id', '=', 'account.shareholder_id')
+            ->where($byShareholder ? 'account.shareholder_id' : 'account.id', $id)->lockForUpdate()
+            ->first(['account.id', 'account.required_amount', 'account.fully_paid_at', 'member.verification_status']);
+    }
+
+    private function reconcileCapitalPayment(object $account, array $payment, array $actor, string $decision, string $now): array
+    {
+        $payments = Sql::all('SELECT amount, status FROM share_capital_payments WHERE capital_account_id = ?', [$account->id]);
+        $computed = Membership::capitalStatus((float) $account->required_amount, $payments);
+        DB::table('share_capital_accounts')->where('id', $account->id)->update([
+            'status' => $computed['status'],
+            'fully_paid_at' => $computed['status'] === 'paid' ? ($account->fully_paid_at ?? $now) : null,
+        ]);
+
+        $id = $payment['id'];
+        if ($decision === 'verified') {
+            DB::table('payments')->insertOrIgnore([
+                'id' => "pay-{$id}",
+                'transaction_type' => 'share_capital',
+                'transaction_id' => $id,
+                'amount' => $payment['amount'],
+                'payment_method' => $payment['payment_method'],
+                'reference' => $payment['reference'],
+                'created_at' => $now,
+            ]);
+        }
+        Api::audit($actor, "share_capital_payment.{$decision}", 'share_capital_payment', $id, [
+            'amount' => $payment['amount'],
+            'new_account_status' => $computed['status'],
+        ]);
+
+        return $computed;
     }
 
     private function profileFields(Request $request): array

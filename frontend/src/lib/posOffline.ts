@@ -68,9 +68,13 @@ export async function savePosCatalog(products: Product[]): Promise<void> {
 export function saveOfflineCashier(session: AuthSession | null): void {
   try {
     if (session?.user.role === 'cashier' && !session.impersonated_by) {
-      localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+      const remember = session.session?.remembered ?? true;
+      const storage = remember ? localStorage : sessionStorage;
+      (remember ? sessionStorage : localStorage).removeItem(SESSION_KEY);
+      storage.setItem(SESSION_KEY, JSON.stringify(session));
     } else {
       localStorage.removeItem(SESSION_KEY);
+      sessionStorage.removeItem(SESSION_KEY);
     }
   } catch {
     // Offline startup requires accessible browser storage.
@@ -79,7 +83,7 @@ export function saveOfflineCashier(session: AuthSession | null): void {
 
 export function loadOfflineCashier(token: string): AuthSession | null {
   try {
-    const session = JSON.parse(localStorage.getItem(SESSION_KEY) ?? 'null') as AuthSession | null;
+    const session = JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? localStorage.getItem(SESSION_KEY) ?? 'null') as AuthSession | null;
     if (session?.token !== token || session.user.role !== 'cashier' || session.impersonated_by) return null;
     const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))) as { exp?: number };
     return typeof payload.exp === 'number' && payload.exp * 1000 > Date.now() ? session : null;

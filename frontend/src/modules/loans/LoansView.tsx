@@ -3,24 +3,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   CheckCircle2,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  ChevronUp,
-  Landmark,
-  ShieldAlert,
-  CalendarClock,
 } from 'lucide-react';
 import { apiRequest, ApiError } from '../../lib/api';
-import {
-  getLoanHistoryDateString,
-  queryShareholderLoanHistory,
-  type LoanHistorySortOrder,
-  type LoanHistoryStatusFilter,
-} from '../../lib/loanHistory';
 import { formatPHP, formatShortDate } from '../../lib/productAssets';
-import { roundCurrency } from '../../lib/domainRules';
 import { LoanApplicationForm, type LoanApplicationDraft } from './LoanApplicationForm';
+import { MemberLoansOverview, type MemberLoanSection } from './MemberLoansOverview';
 import { useAppStore } from '../../stores/app-store';
 import type {
   Loan,
@@ -30,8 +17,6 @@ import type {
 } from '../../types/domain';
 import { ConfirmDialog, type ConfirmDetailRow } from '../../components/ui/ConfirmDialog';
 import { EmptyState, ErrorState, LoadingSkeleton, StatusLabel } from '../../components/ui/StateViews';
-
-const LOAN_HISTORY_PAGE_SIZE = 5;
 
 interface ShareholderLoansDashboard {
   mode: 'shareholder';
@@ -62,11 +47,7 @@ export function LoansView() {
   const isManager = role === 'admin' || role === 'manager';
 
   const [applicationOpen, setApplicationOpen] = useState(false);
-  const [showActiveBreakdown, setShowActiveBreakdown] = useState(false);
-  const [expandedHistoryLoanIds, setExpandedHistoryLoanIds] = useState<Record<string, boolean>>({});
-  const [historyStatusFilter, setHistoryStatusFilter] = useState<LoanHistoryStatusFilter>('all');
-  const [historySortOrder, setHistorySortOrder] = useState<LoanHistorySortOrder>('desc');
-  const [historyPage, setHistoryPage] = useState(1);
+  const [memberSection, setMemberSection] = useState<MemberLoanSection>('accounts');
   const [paymentAmountByLoan, setPaymentAmountByLoan] = useState<Record<string, string>>({});
   const [feedback, setFeedback] = useState<{ tone: 'green' | 'amber' | 'red'; text: string } | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<PendingLoanConfirm | null>(null);
@@ -86,6 +67,7 @@ export function LoansView() {
     onSuccess: (res) => {
       setPendingConfirm(null);
       setApplicationOpen(false);
+      setMemberSection('applications');
       setFeedback({ tone: 'green', text: res.message });
       queryClient.invalidateQueries({ queryKey: ['loans-dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['loans-eligibility'] });
@@ -180,26 +162,6 @@ export function LoansView() {
 
   const data = dashboardQuery.data!;
   const isShareholder = data.mode === 'shareholder';
-  const activeLoans = isShareholder
-    ? data.loans.filter((l) => l.status !== 'fully_paid')
-    : data.loans;
-  const historyResult = isShareholder
-    ? queryShareholderLoanHistory(data.loans, {
-        status: historyStatusFilter,
-        sortOrder: historySortOrder,
-        page: historyPage,
-        pageSize: LOAN_HISTORY_PAGE_SIZE,
-      })
-    : null;
-  const pendingShareholderApps = isShareholder
-    ? data.applications.filter((a) => a.status === 'submitted' || a.status === 'under_review')
-    : [];
-  const totalActiveBalance = activeLoans.reduce((sum, l) => sum + l.computed_balance, 0);
-  const nextInstallment = activeLoans
-    .flatMap((loan) => loan.installments
-      .filter((installment) => installment.status !== 'paid' && installment.amount_due > installment.amount_paid)
-      .map((installment) => ({ loanNumber: loan.loan_number, installment })))
-    .sort((a, b) => a.installment.due_date.localeCompare(b.installment.due_date))[0];
 
   function handleConfirmTransaction() {
     if (!pendingConfirm) return;
@@ -361,29 +323,6 @@ export function LoansView() {
     );
   }
 
-  function renderPaymentHistory(loan: Loan) {
-    return (
-      <div className="mt-4 border-t border-slate-100 pt-4">
-        <h4 className="text-sm font-semibold text-slate-900">Recorded repayments</h4>
-        {loan.payments.length === 0 ? (
-          <p className="mt-2 text-sm text-slate-600">No repayments recorded yet.</p>
-        ) : (
-          <ul className="mt-2 divide-y divide-slate-100">
-            {loan.payments.map((payment) => (
-              <li key={payment.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
-                <div>
-                  <div className="text-slate-800">{formatShortDate(payment.payment_date)}</div>
-                  <div className="font-mono text-xs text-slate-600">{payment.reference}</div>
-                </div>
-                <span className="font-semibold tabular-nums text-emerald-800">{formatPHP(payment.amount)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       {feedback ? (
@@ -414,323 +353,17 @@ export function LoansView() {
           onSubmit={(draft) => applyMutation.mutate(draft)}
         />
       ) : isShareholder ? (
-        <>
-          <div className="grid gap-4 md:grid-cols-2">
-            <section className="rounded-2xl bg-emerald-950 p-5 text-white sm:p-6">
-              <Landmark className="mb-4 h-5 w-5 text-emerald-200" />
-              <h2 className="text-sm font-medium text-emerald-100">Available to borrow</h2>
-              <p className="mt-1 text-3xl font-semibold tabular-nums">{formatPHP(data.evaluation.available_credit)}</p>
-              {data.evaluation.eligible ? (
-                <button type="button" onClick={() => setApplicationOpen(true)}
-                  className="mt-5 w-full rounded-xl bg-emerald-200 px-4 py-2.5 text-sm font-semibold text-emerald-950 hover:bg-emerald-100 sm:w-auto">
-                  Apply for a loan
-                </button>
-              ) : (
-                <div className="mt-4 flex items-start gap-2 text-sm text-emerald-50">
-                  <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
-                  <span>
-                    {data.evaluation.reason || 'Your loan offer is currently unavailable.'}
-                    {data.evaluation.available_at && <> Available again {formatShortDate(data.evaluation.available_at)}.</>}
-                  </span>
-                </div>
-              )}
-            </section>
-            <section className="rounded-2xl border border-emerald-100 bg-white p-5 sm:p-6">
-              <CalendarClock className="mb-4 h-5 w-5 text-emerald-800" />
-              <h2 className="text-sm font-medium text-slate-600">Next payment</h2>
-              {nextInstallment ? (
-                <>
-                  <p className="mt-1 text-3xl font-semibold tabular-nums text-slate-950">
-                    {formatPHP(roundCurrency(nextInstallment.installment.amount_due - nextInstallment.installment.amount_paid))}
-                  </p>
-                  <p className="mt-2 text-sm text-slate-700">
-                    Due {formatShortDate(nextInstallment.installment.due_date)} · {nextInstallment.loanNumber}
-                  </p>
-                  <p className="mt-3 text-sm text-slate-600">Pay through your cooperative manager.</p>
-                </>
-              ) : (
-                <p className="mt-2 text-sm text-slate-600">You have no scheduled payment.</p>
-              )}
-            </section>
-          </div>
-
-          {/* Pending Requests Banner (only when present) */}
-          {pendingShareholderApps.length > 0 ? (
-            <section className="rounded-xl border border-[#E2E8E4] bg-white p-5 space-y-3">
-              <h3 className="font-display text-sm font-semibold text-[#0F172A]">
-                Pending loan applications ({pendingShareholderApps.length})
-              </h3>
-              <div className="divide-y divide-[#E2E8E4]">
-                {pendingShareholderApps.map((app) => (
-                  <div
-                    key={app.id}
-                    className="flex flex-wrap items-center justify-between gap-3 py-2.5 text-xs"
-                  >
-                    <div className="min-w-0">
-                      <div className="font-medium text-[#0F172A]">{app.purpose}</div>
-                      <div className="text-[#64748B]">
-                        {app.term_months} months · {formatShortDate(app.created_at)}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="font-mono font-semibold text-[#0F172A] tabular-nums">
-                        {formatPHP(app.requested_amount)}
-                      </span>
-                      <StatusLabel tone="amber" label={app.status.replace('_', ' ')} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          {/* Active Loan Account Summary — Breakdown Hidden by Default */}
-          <section className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[#E2E8E4] bg-white p-5">
-              <div>
-                <h3 className="font-display text-base font-semibold text-[#0F172A]">
-                  My Loan Accounts ({activeLoans.length})
-                </h3>
-                <p className="mt-0.5 text-xs text-[#64748B]">
-                  {activeLoans.length === 0
-                    ? 'No active loan balance at this time.'
-                    : `Total Active Balance: ${formatPHP(totalActiveBalance)} · Loan repayments are recorded by the cooperative manager.`}
-                </p>
-              </div>
-
-              {activeLoans.length > 0 ? (
-                <button
-                  type="button"
-                  onClick={() => setShowActiveBreakdown((prev) => !prev)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-[#CBD5E1] bg-white px-3.5 py-2 text-xs font-medium text-[#334155] hover:bg-[#F7F9F8] whitespace-nowrap"
-                >
-                  <span>{showActiveBreakdown ? 'Hide Breakdown' : 'Show Breakdown'}</span>
-                  {showActiveBreakdown ? (
-                    <ChevronUp className="h-3.5 w-3.5" />
-                  ) : (
-                    <ChevronDown className="h-3.5 w-3.5" />
-                  )}
-                </button>
-              ) : null}
-            </div>
-
-            {showActiveBreakdown && activeLoans.length > 0 ? (
-              <div className="space-y-4">
-                {activeLoans.map((loan) => (
-                  <div
-                    key={loan.id}
-                    className="rounded-xl border border-[#E2E8E4] bg-white p-5 space-y-4"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#E2E8E4] pb-4">
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-mono text-sm font-bold text-[#0F172A]">
-                            {loan.loan_number}
-                          </span>
-                          <StatusLabel
-                            tone={loan.status === 'overdue' ? 'red' : 'amber'}
-                            label={loan.status.replace('_', ' ')}
-                          />
-                        </div>
-                        <div className="mt-1 text-xs text-[#64748B]">
-                          Principal: {formatPHP(loan.principal)} · Interest:{' '}
-                          {formatPHP(loan.interest_amount)} · Term: {loan.term_months} mos
-                        </div>
-                      </div>
-
-                      <div className="text-right font-mono tabular-nums">
-                        <div className="text-xs text-[#64748B]">Computed Ledger Balance</div>
-                        <div className="text-lg font-bold text-[#0F172A]">
-                          {formatPHP(loan.computed_balance)}
-                        </div>
-                        <div className="text-[11px] text-[#15803D]">
-                          Paid: {formatPHP(loan.computed_total_paid)} /{' '}
-                          {formatPHP(loan.computed_total_payable)}
-                        </div>
-                      </div>
-                    </div>
-
-                    {renderInstallmentTable(loan)}
-                    {renderPaymentHistory(loan)}
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </section>
-
-          {/* Loan History (Shown by Default Below with Status Filter, Date Sort & Pagination) */}
-          {historyResult ? (
-            <section className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#E2E8E4] bg-white px-5 py-4">
-                <div>
-                  <h3 className="font-display text-base font-semibold text-[#0F172A]">
-                    {historyStatusFilter === 'fully_paid'
-                      ? `Completed Loan Accounts (${historyResult.total})`
-                      : `Loan History (${historyResult.total})`}
-                  </h3>
-                  <p className="mt-0.5 text-xs text-[#64748B]">
-                    Filter by loan status, sort by date, and open any record to review installments
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <select
-                    aria-label="Filter loan history by status"
-                    value={historyStatusFilter}
-                    onChange={(e) => {
-                      setHistoryStatusFilter(e.target.value as LoanHistoryStatusFilter);
-                      setHistoryPage(1);
-                    }}
-                    className="rounded-lg border border-[#CBD5E1] bg-white px-3 py-1.5 text-xs font-medium text-[#334155] focus:border-[#15803D] focus:outline-none"
-                  >
-                    <option value="all">All Statuses</option>
-                    <option value="fully_paid">Fully Paid</option>
-                    <option value="active">Active</option>
-                    <option value="overdue">Overdue</option>
-                    <option value="disbursed">Disbursed</option>
-                    <option value="approved">Approved</option>
-                  </select>
-
-                  <select
-                    aria-label="Sort loan history by date"
-                    value={historySortOrder}
-                    onChange={(e) => {
-                      setHistorySortOrder(e.target.value as LoanHistorySortOrder);
-                      setHistoryPage(1);
-                    }}
-                    className="rounded-lg border border-[#CBD5E1] bg-white px-3 py-1.5 text-xs font-medium text-[#334155] focus:border-[#15803D] focus:outline-none"
-                  >
-                    <option value="desc">Newest First</option>
-                    <option value="asc">Oldest First</option>
-                  </select>
-                </div>
-              </div>
-
-              {historyResult.items.length === 0 ? (
-                <EmptyState
-                  title="No loan accounts match this filter"
-                  description={
-                    historyStatusFilter === 'all'
-                      ? 'Your cooperative loan records will appear here once created.'
-                      : `No ${historyStatusFilter.replace('_', ' ')} loan accounts found.`
-                  }
-                />
-              ) : (
-                <div className="space-y-3">
-                  {historyResult.items.map((loan) => {
-                    const expanded = Boolean(expandedHistoryLoanIds[loan.id]);
-                    const historyDate = getLoanHistoryDateString(loan);
-                    return (
-                      <div
-                        key={loan.id}
-                        className="rounded-xl border border-[#E2E8E4] bg-white p-5 space-y-4"
-                      >
-                        <div className="flex flex-wrap items-center justify-between gap-4">
-                          <div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-mono text-sm font-bold text-[#0F172A]">
-                                {loan.loan_number}
-                              </span>
-                              <StatusLabel
-                                tone={
-                                  loan.status === 'fully_paid'
-                                    ? 'green'
-                                    : loan.status === 'overdue'
-                                    ? 'red'
-                                    : 'amber'
-                                }
-                                label={loan.status.replace('_', ' ')}
-                              />
-                              <span className="text-xs text-[#64748B]">
-                                · {formatShortDate(historyDate)}
-                              </span>
-                            </div>
-                            <div className="mt-1 text-xs text-[#64748B]">
-                              Principal: {formatPHP(loan.principal)} · Interest:{' '}
-                              {formatPHP(loan.interest_amount)} · Term: {loan.term_months} mos
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-4">
-                            <div className="text-right font-mono tabular-nums">
-                              <div className="text-xs text-[#64748B]">Total Paid</div>
-                              <div className="text-sm font-bold text-[#15803D]">
-                                {formatPHP(loan.computed_total_paid)}
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setExpandedHistoryLoanIds((prev) => ({
-                                  ...prev,
-                                  [loan.id]: !expanded,
-                                }))
-                              }
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-[#CBD5E1] bg-white px-3 py-1.5 text-xs font-medium text-[#334155] hover:bg-[#F7F9F8] whitespace-nowrap"
-                            >
-                              <span>{expanded ? 'Hide Breakdown' : 'Show Breakdown'}</span>
-                              {expanded ? (
-                                <ChevronUp className="h-3.5 w-3.5" />
-                              ) : (
-                                <ChevronDown className="h-3.5 w-3.5" />
-                              )}
-                            </button>
-                          </div>
-                        </div>
-
-                        {expanded ? (
-                          <div className="border-t border-[#E2E8E4] pt-4">
-                            {renderInstallmentTable(loan)}
-                            {renderPaymentHistory(loan)}
-                          </div>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-
-                  <nav
-                    aria-label="Loan history pagination"
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#E2E8E4] bg-white px-5 py-3"
-                  >
-                    <div className="font-mono text-xs text-[#64748B] tabular-nums">
-                      Showing {historyResult.startIndex}–{historyResult.endIndex} of{' '}
-                      {historyResult.total} loan accounts
-                    </div>
-
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        disabled={historyResult.page <= 1}
-                        onClick={() => setHistoryPage(Math.max(1, historyResult.page - 1))}
-                        className="inline-flex items-center gap-1 rounded-lg border border-[#CBD5E1] bg-white px-3 py-1.5 text-xs font-medium text-[#334155] hover:bg-[#F7F9F8] disabled:opacity-40"
-                      >
-                        <ChevronLeft className="h-3.5 w-3.5" />
-                        <span>Previous</span>
-                      </button>
-
-                      <span className="px-2 font-mono text-xs text-[#475569] tabular-nums">
-                        Page {historyResult.page} of {historyResult.totalPages}
-                      </span>
-
-                      <button
-                        type="button"
-                        disabled={historyResult.page >= historyResult.totalPages}
-                        onClick={() =>
-                          setHistoryPage(Math.min(historyResult.totalPages, historyResult.page + 1))
-                        }
-                        className="inline-flex items-center gap-1 rounded-lg border border-[#CBD5E1] bg-white px-3 py-1.5 text-xs font-medium text-[#334155] hover:bg-[#F7F9F8] disabled:opacity-40"
-                      >
-                        <span>Next</span>
-                        <ChevronRight className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </nav>
-                </div>
-              )}
-            </section>
-          ) : null}
-
-        </>
+        <MemberLoansOverview
+          evaluation={data.evaluation}
+          loans={data.loans}
+          applications={data.applications}
+          section={memberSection}
+          onSectionChange={setMemberSection}
+          onApply={() => {
+            setFeedback(null);
+            setApplicationOpen(true);
+          }}
+        />
       ) : null}
 
       {/* MANAGER / ADMIN PORTFOLIO VIEW */}

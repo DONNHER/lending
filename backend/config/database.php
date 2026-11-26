@@ -1,6 +1,5 @@
 <?php
 
-$default = env('DB_CONNECTION', env('DATABASE_URL') || env('DATABASE_URL_UNPOOLED') ? 'pgsql' : 'sqlite');
 $postgres = [
     'driver' => 'pgsql',
     'host' => env('DB_PGSQL_HOST', env('DB_HOST', '127.0.0.1')),
@@ -14,13 +13,14 @@ $postgres = [
     'sslrootcert' => env('DB_SSLROOTCERT'),
 ];
 
+$default = env('DB_CONNECTION', 'pgsql');
+
 return [
     'default' => $default,
     'connections' => [
         'sqlite' => [
             'driver' => 'sqlite',
-            'url' => env('DB_URL'),
-            'database' => env('DB_SQLITE_DATABASE', env('DB_DATABASE', database_path('argivit.sqlite'))),
+            'database' => env('DB_SQLITE_DATABASE', database_path('argivit.sqlite')),
             'foreign_key_constraints' => true,
             'busy_timeout' => 5000,
             'journal_mode' => 'wal',
@@ -38,9 +38,8 @@ return [
             'sslrootcert' => null,
         ] + $postgres,
     ],
-    // Keep migration tracking at a fixed path while the first migration creates the app schema.
     'migrations' => [
-        'table' => in_array($default, ['pgsql', 'pgsql_direct', 'pgsql_docker'], true) ? 'public.argivit_migrations' : 'migrations',
+        'table' => $default === 'sqlite' ? 'migrations' : 'public.argivit_migrations',
         'update_date_on_publish' => true,
     ],
 ];

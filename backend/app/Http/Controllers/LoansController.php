@@ -65,10 +65,15 @@ class LoansController extends Controller
             return Api::fail('Shareholder profile required for loans.', 403);
         }
 
+        $portfolio = LoanLedger::portfolio($shareholder['id']);
+        if ($portfolio === null || $portfolio['evaluation']['stage'] === 'MEMBERSHIP') {
+            return Api::fail('Complete membership approval and verified share capital to access Loans.', 403);
+        }
+
         return Api::ok('Shareholder loan dashboard retrieved.', [
             'mode' => 'shareholder',
             'shareholder' => $shareholder,
-            ...LoanLedger::portfolio($shareholder['id']),
+            ...$portfolio,
         ]);
     }
 

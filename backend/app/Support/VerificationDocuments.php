@@ -107,7 +107,7 @@ final class VerificationDocuments
     private static function isLocal(): bool
     {
         $disk = config('documents.disk');
-        if ($disk === 'local' && app()->environment('local', 'testing')) {
+        if ($disk === 'local') {
             return true;
         }
         if ($disk !== 's3') {

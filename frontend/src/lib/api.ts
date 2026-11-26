@@ -14,20 +14,28 @@ export class ApiError extends Error {
 
 const TOKEN_STORAGE_KEY = 'argivit_auth_token';
 
+let currentToken: string | null | undefined;
+
 export function getStoredToken(): string | null {
+  if (currentToken !== undefined) return currentToken;
   try {
-    return localStorage.getItem(TOKEN_STORAGE_KEY);
+    return sessionStorage.getItem(TOKEN_STORAGE_KEY) ?? localStorage.getItem(TOKEN_STORAGE_KEY);
   } catch {
     return null;
   }
 }
 
-export function setStoredToken(token: string | null): void {
+export function setStoredToken(token: string | null, remember = true): void {
+  currentToken = token;
   try {
-    if (token) localStorage.setItem(TOKEN_STORAGE_KEY, token);
-    else localStorage.removeItem(TOKEN_STORAGE_KEY);
+    sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+    if (token) {
+      const storage = remember ? localStorage : sessionStorage;
+      storage.setItem(TOKEN_STORAGE_KEY, token);
+    }
   } catch {
-    // ignore storage errors
+    // The current tab can still use its in-memory token.
   }
 }
 

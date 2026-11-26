@@ -1,7 +1,7 @@
 import { ApiError, apiRequest, getStoredToken } from './api';
-import type { ShareholderDocument } from '../types/domain';
+import type { LandPaperType, ShareholderDocument } from '../types/domain';
 
-export function uploadVerificationDocument(documentType: ShareholderDocument['document_type'], file: File) {
+export function uploadVerificationDocument(documentType: LandPaperType, file: File) {
   const body = new FormData();
   body.set('document_type', documentType);
   body.set('file', file);

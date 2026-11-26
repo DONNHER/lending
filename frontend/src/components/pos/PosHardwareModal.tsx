@@ -9,9 +9,6 @@ import {
 export interface PosHardwareSettings {
   hidWedgeArmed: boolean;
   scannerSound: boolean;
-  autoPrintReceipt: boolean;
-  autoCutPaper: boolean;
-  openCashDrawer: boolean;
   serialBaudRate: number;
 }
 
@@ -27,7 +24,7 @@ interface PosHardwareModalProps {
   onDisconnectPrinter: () => void;
   onConnectSerialScanner: () => void;
   onDisconnectSerialScanner: () => void;
-  onTestPrint80mm: () => void;
+  onPreviewReceipt: () => void;
   onClose: () => void;
 }
 
@@ -43,7 +40,7 @@ export function PosHardwareModal({
   onDisconnectPrinter,
   onConnectSerialScanner,
   onDisconnectSerialScanner,
-  onTestPrint80mm,
+  onPreviewReceipt,
   onClose,
 }: PosHardwareModalProps) {
   useEffect(() => {
@@ -178,64 +175,15 @@ export function PosHardwareModal({
               <h3>80mm Thermal Receipt Printer</h3>
             </div>
             <p className="text-xs leading-relaxed text-[#475569]">
-              Formatted for standard 80mm thermal rolls (48-character Font A width with Code 128
-              receipt barcode). Print via your OS 80mm printer driver or pair directly via USB/Serial
-              ESC/POS.
+              Preview or download an 80mm receipt as a PDF. The printer pairing controls are available for setup.
             </p>
-
-            <div className="space-y-2">
-              <label className="flex items-center justify-between gap-3 rounded-lg border border-[#E2E8E4] bg-white px-3 py-2.5 text-xs">
-                <div>
-                  <div className="font-medium text-[#0F172A]">Auto-Print 80mm Receipt After Sale</div>
-                  <div className="text-[#64748B]">
-                    Automatically prints immediately when checkout or pre-order fulfillment completes
-                  </div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={settings.autoPrintReceipt}
-                  onChange={(e) => onUpdateSettings({ autoPrintReceipt: e.target.checked })}
-                  className="h-4 w-4 accent-[#15803D]"
-                />
-              </label>
-
-              <label className="flex items-center justify-between gap-3 rounded-lg border border-[#E2E8E4] bg-white px-3 py-2.5 text-xs">
-                <div>
-                  <div className="font-medium text-[#0F172A]">Auto-Cut Roll (ESC/POS GS V)</div>
-                  <div className="text-[#64748B]">
-                    Triggers partial paper cut at the end of ESC/POS direct prints
-                  </div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={settings.autoCutPaper}
-                  onChange={(e) => onUpdateSettings({ autoCutPaper: e.target.checked })}
-                  className="h-4 w-4 accent-[#15803D]"
-                />
-              </label>
-
-              <label className="flex items-center justify-between gap-3 rounded-lg border border-[#E2E8E4] bg-white px-3 py-2.5 text-xs">
-                <div>
-                  <div className="font-medium text-[#0F172A]">Kick Cash Drawer on Cash Sales</div>
-                  <div className="text-[#64748B]">
-                    Sends RJ-11 drawer pulse (ESC p) on ESC/POS cash receipts
-                  </div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={settings.openCashDrawer}
-                  onChange={(e) => onUpdateSettings({ openCashDrawer: e.target.checked })}
-                  className="h-4 w-4 accent-[#15803D]"
-                />
-              </label>
-            </div>
 
             <div className="rounded-lg border border-[#E2E8E4] bg-white p-3 space-y-2.5 text-xs">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <div className="font-medium text-[#0F172A]">Direct ESC/POS Hardware Link</div>
                   <div className="font-mono text-[11px] text-[#64748B]">
-                    {connectedPrinter ? `Paired: ${connectedPrinter.label}` : 'Using System / Browser 80mm Print'}
+                    {connectedPrinter ? `Paired: ${connectedPrinter.label}` : 'No printer paired'}
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -290,11 +238,11 @@ export function PosHardwareModal({
 
                 <button
                   type="button"
-                  onClick={onTestPrint80mm}
+                  onClick={onPreviewReceipt}
                   className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-[#15803D] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#166534]"
                 >
                   <Printer className="h-3.5 w-3.5" />
-                  Test 80mm Print
+                  Preview 80mm Receipt
                 </button>
               </div>
             </div>

@@ -3,24 +3,39 @@
 namespace App\Http\Controllers;
 
 use App\Support\Api;
+use App\Support\EmailMfa;
+use App\Support\EmailMfaPolicy;
 use App\Support\LegacyPassword;
+use App\Support\PasswordSignIn;
 use App\Support\Sessions;
 use App\Support\Sql;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 
 final class IdentityController extends Controller
 {
     public function configuration(): JsonResponse
     {
+        $demoEmails = [];
+        if (app()->environment('local', 'testing') && !config('argivit.auth_url')
+            && (DB::connection()->getDriverName() === 'sqlite' || Sessions::allowsLocalDockerAuth())) {
+            $roles = ['usr-admin' => 'admin', 'usr-manager' => 'manager', 'usr-cashier' => 'cashier', 'usr-sh-1' => 'shareholder'];
+            $demoEmails = DB::table('users')->whereIn('id', array_keys($roles))->where('account_status', 'active')
+                ->get(['id', 'email', 'role'])
+                ->filter(static fn ($user) => $roles[$user->id] === $user->role)
+                ->pluck('email')->all();
+        }
+
         return Api::ok('Authentication configuration retrieved.', [
             'auth_url' => config('argivit.auth_url'),
             'data_api_url' => config('argivit.data_api_url'),
-            'demo_accounts' => app()->environment('local', 'testing') && !config('argivit.auth_url')
-                && (DB::connection()->getDriverName() === 'sqlite' || Sessions::allowsLocalDockerAuth()),
+            'demo_accounts' => $demoEmails !== [],
+            'demo_account_emails' => $demoEmails,
+            'password_recovery' => AccountSecurityController::recoveryUrl() !== null,
         ])->header('Cache-Control', 'no-store');
     }
 
@@ -29,20 +44,43 @@ final class IdentityController extends Controller
         if (config('argivit.auth_url')) {
             return Api::fail('Sign in through external authentication.', 403);
         }
-        $input = $request->validate(['email' => 'required|email', 'password' => 'required|string']);
-        $user = Sql::one('SELECT id, password_hash, account_status FROM users WHERE lower(email) = lower(?)', [$input['email']]);
-        if (!$user || !LegacyPassword::verify($input['password'], $user['password_hash'])) {
-            return Api::fail('Invalid email or password.', 401);
+        $input = $request->validate(['email' => 'required|email|max:254', 'password' => 'required|string', 'remember' => 'sometimes|boolean']);
+        $user = PasswordSignIn::verify($request, $input['email'], $input['password']);
+        if ($user instanceof JsonResponse) {
+            return $user;
         }
         if ($user['account_status'] !== 'active') {
             return Api::fail('This account is currently disabled.', 403);
         }
-        if (LegacyPassword::isLegacy($user['password_hash']) && strlen($input['password']) <= 72 && !str_contains($input['password'], "\0")) {
-            Sql::run('UPDATE users SET password_hash = ? WHERE id = ? AND password_hash = ?',
-                [password_hash($input['password'], PASSWORD_DEFAULT), $user['id'], $user['password_hash']]);
+        $verifiedHash = $user['password_hash'];
+        if (LegacyPassword::isLegacy($verifiedHash) && strlen($input['password']) <= 72 && !str_contains($input['password'], "\0")) {
+            $newHash = password_hash($input['password'], PASSWORD_DEFAULT);
+            if (Sql::run('UPDATE users SET password_hash = ? WHERE id = ? AND password_hash = ?', [$newHash, $user['id'], $verifiedHash]) > 0) {
+                $verifiedHash = $newHash;
+            }
+        }
+        $remember = (bool) ($input['remember'] ?? true);
+        if (EmailMfaPolicy::enabled()) {
+            return EmailMfa::issue($user['id'], $verifiedHash, remember: $remember);
         }
 
-        return Api::ok('Signed in successfully.', Sessions::begin(Sessions::userBy('id', $user['id'])));
+        $session = Sessions::beginWithPassword($user['id'], $verifiedHash, $remember);
+        if ($session === null) {
+            return Api::fail('Account credentials changed. Sign in again.', 401);
+        }
+        PasswordSignIn::audit($request, 'auth.signed_in', $session['user'], ['method' => 'password']);
+
+        return Api::ok('Signed in successfully.', $session);
+    }
+
+    public function verifyEmailMfa(Request $request): JsonResponse
+    {
+        if (config('argivit.auth_url') || !EmailMfaPolicy::enabled()) {
+            return Api::fail('Email code verification is unavailable.', 404);
+        }
+        $input = $request->validate(['challenge_id' => ['required', 'uuid'], 'code' => ['required', 'string', 'regex:/\A[0-9]{6}\z/']]);
+
+        return EmailMfa::verify($request, $input['challenge_id'], $input['code']);
     }
 
     public function register(Request $request): JsonResponse
@@ -51,7 +89,7 @@ final class IdentityController extends Controller
             return Api::fail('Create your account through external authentication.', 403);
         }
         $input = $request->validate([
-            'email' => 'required|email', 'password' => 'required|string|min:6|max:72',
+            'email' => 'required|email', 'password' => ['required', 'string', 'max:72', Password::min(8)->mixedCase()->numbers()->symbols()],
             'first_name' => 'required|string', 'last_name' => 'required|string',
             'contact_number' => 'sometimes|nullable|string', 'address' => 'sometimes|nullable|string',
         ]);
@@ -59,18 +97,24 @@ final class IdentityController extends Controller
             throw ValidationException::withMessages(['password' => ['Enter a password of at most 72 bytes without null characters.']]);
         }
 
-        return DB::transaction(function () use ($input): JsonResponse {
-            if (Sessions::allowsLocalDockerAuth()) {
-                Sql::one('SELECT pg_advisory_xact_lock(hashtext(?))', ['argivit-auth:'.strtolower($input['email'])]);
+        $passwordHash = password_hash($input['password'], PASSWORD_DEFAULT);
+        $result = DB::transaction(function () use ($input, $passwordHash): array|JsonResponse {
+            if (DB::connection()->getDriverName() === 'pgsql') {
+                Sql::one("SELECT pg_advisory_xact_lock(hashtext('argivit-auth:' || lower(?)))", [$input['email']]);
             }
             if (Sessions::userBy('email', $input['email'])) {
                 return Api::fail('The submitted data is invalid.', 422, ['email' => ['An account with this email already exists.']]);
             }
-            $user = $this->createBorrower($input, 'local-'.Str::uuid(), password_hash($input['password'], PASSWORD_DEFAULT));
+            $user = $this->createBorrower($input, 'local-'.Str::uuid(), $passwordHash);
+            if (EmailMfaPolicy::enabled()) {
+                return $user;
+            }
 
             return Api::ok('Shareholder account created. Complete verification and initial share capital to unlock loans.',
                 Sessions::begin($user), null, 201);
         });
+
+        return is_array($result) ? EmailMfa::issue($result['id'], $passwordHash, registration: true) : $result;
     }
 
     public function synchronize(Request $request): JsonResponse
@@ -86,7 +130,7 @@ final class IdentityController extends Controller
             $subject = $claims['sub'];
             $email = $claims['email'] ?? null;
             $name = $claims['name'] ?? null;
-        } elseif (app()->environment('local', 'testing') && config('argivit.allow_demo_auth')
+        } elseif (app()->environment('local', 'testing') && config('argivit.allow_demo_auth') && !EmailMfaPolicy::enabled()
             && DB::connection()->getDriverName() === 'sqlite') {
             $demo = $request->validate(['auth_user_id' => 'required|string|min:3', 'email' => 'required|email', 'name' => 'required|string']);
             $subject = $demo['auth_user_id'];
@@ -111,7 +155,7 @@ final class IdentityController extends Controller
 
         return DB::transaction(function () use ($subject, $email, $name, $verified, $emailVerified, $profile): JsonResponse {
             if (DB::connection()->getDriverName() === 'pgsql') {
-                Sql::one('SELECT pg_advisory_xact_lock(hashtext(?))', ['argivit-auth:'.strtolower($email)]);
+                Sql::one("SELECT pg_advisory_xact_lock(hashtext('argivit-auth:' || lower(?)))", [$email]);
             }
             $user = Sessions::userBy('auth_user_id', $subject);
             if (!$verified && $user && ($user['role'] !== 'shareholder' || strcasecmp($user['email'], $email) !== 0)) {
@@ -180,12 +224,14 @@ final class IdentityController extends Controller
         $user = Api::actor($request);
 
         return Api::ok('Session active.', ['user' => $user, 'permissions' => Sessions::permissions($user['role']),
-            'impersonated_by' => $request->attributes->get('argivit.impersonator')]);
+            'impersonated_by' => $request->attributes->get('argivit.impersonator'),
+            'session' => $request->attributes->get('argivit.session_status')])->header('Cache-Control', 'no-store');
     }
 
     public function logout(Request $request): JsonResponse
     {
         Sessions::revoke($request->attributes->get('argivit.session'));
+        PasswordSignIn::audit($request, 'auth.signed_out', Api::actor($request));
 
         return Api::ok('Logged out successfully.');
     }
@@ -245,10 +291,16 @@ final class IdentityController extends Controller
         if ($user['account_status'] !== 'active' || $request->attributes->has('argivit.impersonator')) {
             return Api::fail('This account cannot be impersonated from this session.', 400);
         }
+        $origin = $request->attributes->get('argivit.session');
+        if ($origin === null) {
+            return Api::fail('Sign in to an Argivit session before starting impersonation.', 403);
+        }
         $admin = array_intersect_key(Api::actor($request), array_flip(['id', 'name', 'email']));
+        $originStatus = $request->attributes->get('argivit.session_status');
 
-        return DB::transaction(function () use ($admin, $user): JsonResponse {
-            $data = Sessions::begin($user, $admin);
+        return DB::transaction(function () use ($admin, $user, $origin, $originStatus): JsonResponse {
+            $data = Sessions::begin($user, $admin, remember: $originStatus['remembered'], origin: $origin);
+            $data['session'] = Sessions::combineImpersonation($data['session'], $originStatus);
             Api::audit($admin, 'admin.impersonation_started', 'user', $user['id'], ['target_email' => $user['email']]);
 
             return Api::ok("Now viewing system as {$user['name']} ({$user['role']}).", $data);
@@ -267,8 +319,11 @@ final class IdentityController extends Controller
         }
 
         return DB::transaction(function () use ($request, $admin): JsonResponse {
+            $data = Sessions::resume($admin, $request->attributes->get('argivit.impersonation_origin'));
+            if ($data === null) {
+                return Api::fail('The original admin session has ended. Sign in again.', 401);
+            }
             Sessions::revoke($request->attributes->get('argivit.session'));
-            $data = Sessions::begin($admin);
             Api::audit($admin, 'admin.impersonation_ended', 'user', Api::actor($request)['id']);
 
             return Api::ok('Returned to Administrator session.', $data);
@@ -277,19 +332,37 @@ final class IdentityController extends Controller
 
     public function auditLog(Request $request): JsonResponse
     {
-        $text = is_string($request->query('q')) ? strtolower(trim($request->query('q'))) : '';
-        $action = is_string($request->query('action')) ? strtolower(trim($request->query('action'))) : '';
-        $rows = Sql::all('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 200');
-        $entries = [];
-        foreach ($rows as $row) {
-            if (($action !== '' && !str_contains(strtolower($row['action']), $action))
-                || ($text !== '' && !str_contains(strtolower(implode(' ', [$row['actor_name'], $row['action'], $row['entity_type'], $row['entity_id']])), $text))) {
-                continue;
+        $input = $request->validate([
+            'q' => 'sometimes|nullable|string|max:200', 'action' => 'sometimes|nullable|string|max:100',
+            'scope' => 'sometimes|in:active,archived,all', 'before' => 'sometimes|date_format:Y-m-d',
+            'after' => 'sometimes|date_format:Y-m-d',
+        ]);
+        $query = DB::table('audit_logs');
+        match ($input['scope'] ?? 'active') {
+            'active' => $query->whereNull('archived_at'),
+            'archived' => $query->whereNotNull('archived_at'),
+            default => null,
+        };
+        foreach (['q', 'action'] as $field) {
+            $value = mb_strtolower(trim($input[$field] ?? ''));
+            if ($value !== '') {
+                $search = '%'.strtr($value, ['!' => '!!', '%' => '!%', '_' => '!_']).'%';
+                $columns = $field === 'q' ? "actor_name || ' ' || action || ' ' || entity_type || ' ' || entity_id" : 'action';
+                $query->whereRaw("lower({$columns}) LIKE ? ESCAPE '!'", [$search]);
             }
-            $row['metadata'] = json_decode($row['metadata_json']) ?? (object) [];
-            unset($row['metadata_json']);
-            $entries[] = $row;
         }
+        if (isset($input['after'])) {
+            $query->where('created_at', '>=', $input['after']);
+        }
+        if (isset($input['before'])) {
+            $query->where('created_at', '<', \Carbon\CarbonImmutable::parse($input['before'], 'UTC')->addDay()->toDateString());
+        }
+        $entries = $query->orderByDesc('created_at')->orderByDesc('id')->limit(200)->get()->map(static function (object $row): object {
+            $row->metadata = json_decode($row->metadata_json) ?? (object) [];
+            unset($row->metadata_json);
+
+            return $row;
+        });
 
         return Api::ok('Audit logs retrieved.', $entries);
     }

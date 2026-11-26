@@ -3,12 +3,23 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "main": "desktop/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
-    "test": "node --import tsx --test src/lib/*.test.ts"
+    "test": "node --import tsx --test src/lib/*.test.ts",
+    "test:desktop": "node --test desktop/cashier-db.test.cjs",
+    "desktop": "electron .",
+    "desktop:build": "npm run build && electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "ph.argivit.cashier",
+    "productName": "Agrivit Cashier",
+    "directories": { "output": "release" },
+    "files": ["dist/**/*", "desktop/**/*", "!desktop/*.test.cjs"],
+    "nsis": { "artifactName": "Agrivit-Cashier-Setup-${version}.${ext}" }
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

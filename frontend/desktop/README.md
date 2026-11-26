@@ -20,4 +20,4 @@ npm.cmd run test:desktop
 npm.cmd run desktop:build
 ```
 
-The build writes the installer to `frontend/release/`. To run the desktop app from source after building React, run `npm.cmd run desktop`. A keyboard-mode barcode scanner and a Windows printer driver work through the app’s existing scan field and print dialog. Direct USB or serial pairing needs a separate Electron device chooser.
+The build writes the installer to `frontend/release/`. To run the desktop app from source after building React, run `npm.cmd run desktop`. Use a keyboard-mode barcode scanner with the cashier scan field. Completing a sale opens an 80 mm receipt preview with Export PDF. The preview also opens from sales history and can export while offline.

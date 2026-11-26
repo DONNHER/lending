@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { AuditLog, Product } from '../types/domain';
+import type { ProductImportRowError } from './productImport';
 import type { ReportPeriod } from './reportPeriods';
 
 export type ReportTabView = 'overview' | 'pos' | 'loans';
@@ -80,6 +81,57 @@ function pdfCurrency(amount: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+}
+
+const PDF_MARGIN = { top: 105, bottom: 52, left: 40, right: 40 };
+
+function brandReportPages(doc: jsPDF, title: string, subtitle: string, generatedAt: Date) {
+  const width = doc.internal.pageSize.getWidth();
+  const height = doc.internal.pageSize.getHeight();
+  const generated = generatedAt.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+  const pageCount = doc.getNumberOfPages();
+
+  for (let page = 1; page <= pageCount; page++) {
+    doc.setPage(page);
+    doc.setFillColor(20, 83, 45);
+    doc.roundedRect(40, 26, 31, 31, 6, 6, 'F');
+    doc.setDrawColor(255, 255, 255);
+    doc.setLineWidth(1.3);
+    doc.lines([[0, -8, 8, -9, 14, -10], [0, 7, -2, 13, -10, 14], [-3, 0, -4, -1, -4, -4]], 48, 46, [1, 1], 'S');
+    doc.line(47, 49, 56, 42);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(20, 83, 45);
+    doc.text('Argivit Agricultural Supply Cooperative', 82, 40);
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text(title, 82, 55);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(71, 85, 105);
+    doc.text(subtitle, 40, 81);
+    doc.setDrawColor(206, 222, 212);
+    doc.setLineWidth(0.7);
+    doc.line(40, 91, width - 40, 91);
+    doc.line(40, height - 40, width - 40, height - 40);
+    doc.text(`Generated ${generated}`, 40, height - 24);
+    doc.text(`Page ${page} of ${pageCount}`, width - 40, height - 24, { align: 'right' });
+  }
+}
+
+export function exportProductImportErrors(errors: ProductImportRowError[], sourceFile: string): string {
+  const baseName = sourceFile.replace(/\.[^.]+$/, '').replace(/[^a-z0-9_-]+/gi, '-').slice(0, 80) || 'catalog';
+  const filename = `${baseName}-import-errors.xlsx`;
+  const worksheet = XLSX.utils.aoa_to_sheet([
+    ['Row', 'SKU', 'Product name', 'Error'],
+    ...errors.map(({ rowNumber, sku, name, reason }) => [rowNumber, sku, name, reason]),
+  ]);
+  worksheet['!cols'] = [{ wch: 8 }, { wch: 20 }, { wch: 28 }, { wch: 65 }];
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book, worksheet, 'Import errors');
+  XLSX.writeFile(book, filename);
+  return filename;
 }
 
 export function exportCooperativeReportExcel(
@@ -176,7 +228,8 @@ export function exportCooperativeReportPdf(
   activeView: ReportTabView
 ): string {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
-  const stamp = new Date().toISOString().slice(0, 10);
+  const generated = new Date();
+  const stamp = generated.toISOString().slice(0, 10);
   const filename = `argivit-${activeView}-report-${data.period}-${stamp}.pdf`;
 
   const titleByView: Record<ReportTabView, string> = {
@@ -185,22 +238,11 @@ export function exportCooperativeReportPdf(
     loans: 'Cooperative Loan Portfolio Report',
   };
 
-  doc.setFontSize(15);
-  doc.setTextColor(20, 83, 45);
-  doc.text('Argivit Agricultural Supply Cooperative', 40, 42);
-
-  doc.setFontSize(12);
-  doc.setTextColor(15, 23, 42);
-  doc.text(titleByView[activeView], 40, 62);
-
-  doc.setFontSize(9);
-  doc.setTextColor(100, 116, 139);
-  doc.text(`Period: ${data.period_label} · Generated: ${new Date().toISOString().slice(0, 19)}Z`, 40, 78);
-
-  let nextY = 96;
+  let nextY = PDF_MARGIN.top;
 
   if (activeView === 'overview' || activeView === 'pos') {
     autoTable(doc, {
+      margin: PDF_MARGIN,
       startY: nextY,
       head: [['Financial & POS Metric', 'Value']],
       body: [
@@ -218,6 +260,7 @@ export function exportCooperativeReportPdf(
 
     if (data.pos_report.recent_sales.length > 0) {
       autoTable(doc, {
+        margin: PDF_MARGIN,
         startY: nextY,
         head: [['Sale #', 'Cashier', 'Method', 'Source', 'Total']],
         body: data.pos_report.recent_sales.map((s) => [
@@ -236,6 +279,7 @@ export function exportCooperativeReportPdf(
 
   if (activeView === 'overview' || activeView === 'loans') {
     autoTable(doc, {
+      margin: PDF_MARGIN,
       startY: nextY,
       head: [['Loan Portfolio Metric', 'Value']],
       body: [
@@ -253,6 +297,7 @@ export function exportCooperativeReportPdf(
 
     if (data.loans_report.loans.length > 0) {
       autoTable(doc, {
+        margin: PDF_MARGIN,
         startY: nextY,
         head: [['Loan #', 'Member', 'Status', 'Principal', 'Paid', 'Balance']],
         body: data.loans_report.loans.map((l) => [
@@ -269,6 +314,7 @@ export function exportCooperativeReportPdf(
     }
   }
 
+  brandReportPages(doc, titleByView[activeView], `Period: ${data.period_label}`, generated);
   doc.save(filename);
   return filename;
 }
@@ -375,20 +421,14 @@ export function exportProductsDataset(
 
   if (format === 'pdf') {
     const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
-    doc.setFontSize(14);
-    doc.setTextColor(20, 83, 45);
-    doc.text('Argivit Store — Filtered Warehouse Inventory Export', 40, 40);
-    doc.setFontSize(9);
-    doc.setTextColor(100, 116, 139);
-    doc.text(`Exported ${rows.length} product(s) on ${new Date().toISOString().slice(0, 19)}Z`, 40, 56);
-
     autoTable(doc, {
-      startY: 72,
+      margin: PDF_MARGIN,
       head: [selectedCols],
       body: rows.map((r) => selectedCols.map((c) => String(r[c] ?? ''))),
       headStyles: { fillColor: [21, 128, 61] },
       styles: { fontSize: 8 },
     });
+    brandReportPages(doc, 'Filtered Warehouse Inventory', `Products: ${rows.length}`, new Date());
     doc.save(filename);
     return filename;
   }
@@ -404,21 +444,14 @@ export function exportProductsDataset(
   return filename;
 }
 
-export function exportAuditLogsDataset(logs: AuditLog[], format: 'csv' | 'pdf'): string {
+export function exportAuditLogsDataset(logs: AuditLog[], format: 'csv' | 'pdf' | 'xlsx'): string {
   const stamp = new Date().toISOString().slice(0, 10);
   const filename = `argivit-audit-trail-${stamp}.${format}`;
 
   if (format === 'pdf') {
     const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
-    doc.setFontSize(14);
-    doc.setTextColor(20, 83, 45);
-    doc.text('Argivit Store — Compliance Audit Trail', 40, 40);
-    doc.setFontSize(9);
-    doc.setTextColor(100, 116, 139);
-    doc.text(`Records: ${logs.length} · Generated: ${new Date().toISOString().slice(0, 19)}Z`, 40, 56);
-
     autoTable(doc, {
-      startY: 72,
+      margin: PDF_MARGIN,
       head: [['Action', 'Actor', 'Entity', 'Metadata', 'Timestamp']],
       body: logs.map((l) => [
         l.action,
@@ -430,6 +463,7 @@ export function exportAuditLogsDataset(logs: AuditLog[], format: 'csv' | 'pdf'):
       headStyles: { fillColor: [21, 128, 61] },
       styles: { fontSize: 8 },
     });
+    brandReportPages(doc, 'Compliance Audit Trail', `Records: ${logs.length}`, new Date());
     doc.save(filename);
     return filename;
   }
@@ -447,6 +481,6 @@ export function exportAuditLogsDataset(logs: AuditLog[], format: 'csv' | 'pdf'):
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'AuditLogs');
-  XLSX.writeFile(wb, filename, { bookType: 'csv' });
+  XLSX.writeFile(wb, filename, { bookType: format });
   return filename;
 }

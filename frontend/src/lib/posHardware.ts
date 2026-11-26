@@ -116,7 +116,7 @@ export function centerText(text: string, width = RECEIPT_COLS_80MM): string {
   return `${' '.repeat(pad)}${clean}`;
 }
 
-function formatReceiptTimestamp(iso: string): string {
+export function formatReceiptTimestamp(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
   return date.toLocaleString('en-PH', {

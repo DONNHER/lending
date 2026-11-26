@@ -1,0 +1,109 @@
+{
+  "categories": [
+    { "id": "cat-animal-care", "name": "Animal Vitamins & Vet Supplies", "parent_id": null }
+  ],
+  "products": [
+    {
+      "id": "prod-animal-vita",
+      "category_id": "cat-animal-care",
+      "sku": "AGR-VET-001",
+      "barcode": "2900000000018",
+      "name": "Animal Vita Animal Food Supplement",
+      "description": "Pack of Animal Vita food supplement for animals.",
+      "base_unit": "pack",
+      "cost_price": 75,
+      "status": "active",
+      "image_key": "feed"
+    },
+    {
+      "id": "prod-vitavet-plus",
+      "category_id": "cat-animal-care",
+      "sku": "AGR-VET-002",
+      "barcode": "2900000000025",
+      "name": "Lakpue Vitavet Plus 7 g",
+      "description": "Gamefowl multivitamins and amino acids in a 7 g sachet.",
+      "base_unit": "sachet",
+      "cost_price": 17.5,
+      "status": "active",
+      "image_key": "feed"
+    },
+    {
+      "id": "prod-farmavet-vmp100",
+      "category_id": "cat-animal-care",
+      "sku": "AGR-VET-003",
+      "barcode": "2900000000032",
+      "name": "FarmaVet VMP 100 Liquid Multivitamins",
+      "description": "Bottled liquid multivitamin supplement for livestock and poultry.",
+      "base_unit": "bottle",
+      "cost_price": 149,
+      "status": "active",
+      "image_key": "feed"
+    },
+    {
+      "id": "prod-vet-syringe-3ml",
+      "category_id": "cat-animal-care",
+      "sku": "AGR-VET-004",
+      "barcode": "2900000000049",
+      "name": "Disposable Veterinary Syringe 3 mL",
+      "description": "Individually packed disposable veterinary syringe with 3 mL capacity.",
+      "base_unit": "piece",
+      "cost_price": 4,
+      "status": "active",
+      "image_key": "animal-care"
+    },
+    {
+      "id": "prod-vet-syringe-5ml",
+      "category_id": "cat-animal-care",
+      "sku": "AGR-VET-005",
+      "barcode": "2900000000056",
+      "name": "Disposable Veterinary Syringe 5 mL",
+      "description": "Individually packed disposable veterinary syringe with 5 mL capacity.",
+      "base_unit": "piece",
+      "cost_price": 5,
+      "status": "active",
+      "image_key": "animal-care"
+    },
+    {
+      "id": "prod-vet-needle-18g",
+      "category_id": "cat-animal-care",
+      "sku": "AGR-VET-006",
+      "barcode": "2900000000063",
+      "name": "Veterinary Hypodermic Needle 18G × ½ in",
+      "description": "Reusable stainless steel veterinary injection needle, 18 gauge by half an inch.",
+      "base_unit": "piece",
+      "cost_price": 10,
+      "status": "active",
+      "image_key": "animal-care"
+    },
+    {
+      "id": "prod-vet-needle-21g",
+      "category_id": "cat-animal-care",
+      "sku": "AGR-VET-007",
+      "barcode": "2900000000070",
+      "name": "Veterinary Hypodermic Needle 21G × ½ in",
+      "description": "Reusable stainless steel veterinary injection needle, 21 gauge by half an inch.",
+      "base_unit": "piece",
+      "cost_price": 10,
+      "status": "active",
+      "image_key": "animal-care"
+    }
+  ],
+  "product_units": [
+    { "id": "unit-animal-vita-pack", "product_id": "prod-animal-vita", "unit_name": "Pack", "conversion_factor": 1, "selling_price": 105, "is_default": 1 },
+    { "id": "unit-vitavet-plus-sachet", "product_id": "prod-vitavet-plus", "unit_name": "Sachet", "conversion_factor": 1, "selling_price": 25, "is_default": 1 },
+    { "id": "unit-farmavet-vmp100-bottle", "product_id": "prod-farmavet-vmp100", "unit_name": "Bottle", "conversion_factor": 1, "selling_price": 195, "is_default": 1 },
+    { "id": "unit-vet-syringe-3ml-piece", "product_id": "prod-vet-syringe-3ml", "unit_name": "Piece", "conversion_factor": 1, "selling_price": 7, "is_default": 1 },
+    { "id": "unit-vet-syringe-5ml-piece", "product_id": "prod-vet-syringe-5ml", "unit_name": "Piece", "conversion_factor": 1, "selling_price": 8, "is_default": 1 },
+    { "id": "unit-vet-needle-18g-piece", "product_id": "prod-vet-needle-18g", "unit_name": "Piece", "conversion_factor": 1, "selling_price": 15, "is_default": 1 },
+    { "id": "unit-vet-needle-21g-piece", "product_id": "prod-vet-needle-21g", "unit_name": "Piece", "conversion_factor": 1, "selling_price": 15, "is_default": 1 }
+  ],
+  "inventory_balances": [
+    { "id": "bal-prod-animal-vita", "product_id": "prod-animal-vita", "quantity_base": 32 },
+    { "id": "bal-prod-vitavet-plus", "product_id": "prod-vitavet-plus", "quantity_base": 48 },
+    { "id": "bal-prod-farmavet-vmp100", "product_id": "prod-farmavet-vmp100", "quantity_base": 20 },
+    { "id": "bal-prod-vet-syringe-3ml", "product_id": "prod-vet-syringe-3ml", "quantity_base": 100 },
+    { "id": "bal-prod-vet-syringe-5ml", "product_id": "prod-vet-syringe-5ml", "quantity_base": 100 },
+    { "id": "bal-prod-vet-needle-18g", "product_id": "prod-vet-needle-18g", "quantity_base": 60 },
+    { "id": "bal-prod-vet-needle-21g", "product_id": "prod-vet-needle-21g", "quantity_base": 60 }
+  ]
+}

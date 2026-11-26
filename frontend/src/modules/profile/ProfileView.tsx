@@ -3,13 +3,10 @@ import { LogOut, Mail, ShieldCheck, User as UserIcon, Wallet } from 'lucide-reac
 import { apiRequest } from '../../lib/api';
 import { formatDateTime, formatPHP } from '../../lib/productAssets';
 import { useAppStore } from '../../stores/app-store';
-import type { AuthSession, ShareCapitalAccount, ShareholderProfile } from '../../types/domain';
+import type { AuthSession } from '../../types/domain';
 import { StatusLabel } from '../../components/ui/StateViews';
-
-interface MeShareholderSummary {
-  profile: ShareholderProfile;
-  capital_account: ShareCapitalAccount;
-}
+import { membershipQuery } from '../shareholders/membershipQuery';
+import { SessionDevices } from '../auth/SessionDevices';
 
 export function ProfileView() {
   const queryClient = useQueryClient();
@@ -18,11 +15,7 @@ export function ProfileView() {
   const user = session?.user;
   const impersonatedBy = session?.impersonated_by ?? null;
 
-  const shareholderQuery = useQuery({
-    queryKey: ['shareholder-me-summary'],
-    enabled: user?.role === 'shareholder',
-    queryFn: async () => (await apiRequest<MeShareholderSummary | null>('/shareholders/me')).data,
-  });
+  const shareholderQuery = useQuery(membershipQuery(user?.role === 'shareholder' ? user.id : undefined));
 
   if (!user) return null;
 
@@ -55,6 +48,11 @@ export function ProfileView() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
+      {session?.session && !impersonatedBy && (
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <SessionDevices userId={user.id} />
+        </div>
+      )}
       {/* Account Summary Card */}
       <section className="rounded-xl border border-[#E2E8E4] bg-white p-6 space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#E2E8E4] pb-5">
@@ -154,7 +152,7 @@ export function ProfileView() {
               <dd className="mt-1 inline-flex items-center gap-1.5 font-mono text-xs font-semibold text-[#15803D] tabular-nums">
                 <Wallet className="h-3.5 w-3.5" />
                 {formatPHP(shData.capital_account?.paid_amount ?? 0)} /{' '}
-                {formatPHP(shData.capital_account?.required_amount ?? 5000)}
+                {formatPHP(shData.required_share_capital)}
               </dd>
             </div>
           </dl>

@@ -30,6 +30,8 @@ import type {
 } from '../../types/domain';
 import { ConfirmDialog, type ConfirmDetailRow } from '../../components/ui/ConfirmDialog';
 import { EmptyState, ErrorState, LoadingSkeleton, StatusLabel } from '../../components/ui/StateViews';
+import { EmailMfaSettings } from './EmailMfaSettings';
+import { UserSecurityPanel } from './UserSecurityPanel';
 
 type PendingAdminTx =
   | { kind: 'policy' }
@@ -68,8 +70,12 @@ export function SettingsView() {
     setWorkspaceSubTab('settings', next);
   const [feedback, setFeedback] = useState<{ tone: 'green' | 'red'; text: string } | null>(null);
   const [pendingTx, setPendingTx] = useState<PendingAdminTx | null>(null);
+  const [securityUserId, setSecurityUserId] = useState<string | null>(null);
   const [auditSearch, setAuditSearch] = useState('');
   const [auditActionFilter, setAuditActionFilter] = useState('');
+  const [auditScope, setAuditScope] = useState('active');
+  const [auditAfter, setAuditAfter] = useState('');
+  const [auditBefore, setAuditBefore] = useState('');
   const [expandedAuditId, setExpandedAuditId] = useState<string | null>(null);
 
   const [reqCapital, setReqCapital] = useState('5000');
@@ -129,14 +135,15 @@ export function SettingsView() {
   });
 
   const auditQuery = useQuery({
-    queryKey: ['admin-audit-logs', auditSearch, auditActionFilter],
+    queryKey: ['admin-audit-logs', auditSearch, auditActionFilter, auditScope, auditAfter, auditBefore],
     enabled: tab === 'audit',
     queryFn: async () => {
-      const qs = new URLSearchParams();
+      const qs = new URLSearchParams({ scope: auditScope });
       if (auditSearch.trim()) qs.set('q', auditSearch.trim());
       if (auditActionFilter.trim()) qs.set('action', auditActionFilter.trim());
-      const suffix = qs.toString() ? `?${qs.toString()}` : '';
-      return (await apiRequest<AuditLog[]>(`/admin/audit-logs${suffix}`)).data;
+      if (auditAfter) qs.set('after', auditAfter);
+      if (auditBefore) qs.set('before', auditBefore);
+      return (await apiRequest<AuditLog[]>(`/admin/audit-logs?${qs}`)).data;
     },
   });
 
@@ -254,7 +261,7 @@ export function SettingsView() {
     setPendingTx({ kind: 'policy' });
   }
 
-  async function handleExportAudit(format: 'csv' | 'pdf') {
+  async function handleExportAudit(format: 'csv' | 'pdf' | 'xlsx') {
     const rows = auditQuery.data || [];
     if (rows.length === 0) return;
     const filename = exportAuditLogsDataset(rows, format);
@@ -529,6 +536,10 @@ export function SettingsView() {
                               <UserCog className="h-3.5 w-3.5" />
                               Impersonate
                             </button>
+                            <button type="button" onClick={() => setSecurityUserId(u.id)}
+                              className="rounded border border-[#CBD5E1] px-2.5 py-1 text-xs font-medium text-[#334155] hover:bg-[#F7F9F8]">
+                              Security
+                            </button>
                             <button
                               type="button"
                               onClick={() =>
@@ -556,6 +567,10 @@ export function SettingsView() {
           )}
         </div>
       ) : null}
+
+      {tab === 'users' && isAdmin && usersQuery.data?.filter((user) => user.id === securityUserId).map((user) => (
+        <UserSecurityPanel key={user.id} user={user} onClose={() => setSecurityUserId(null)} />
+      ))}
 
       {tab === 'policy' ? (
         <form
@@ -641,6 +656,8 @@ export function SettingsView() {
           </button>
         </form>
       ) : null}
+
+      {tab === 'policy' && isAdmin && session && <EmailMfaSettings userId={session.user.id} />}
 
       {tab === 'sync' ? (
         <div className="space-y-5">
@@ -735,6 +752,10 @@ export function SettingsView() {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <button type="button" onClick={() => void handleExportAudit('xlsx')} disabled={!auditQuery.data?.length}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[#CBD5E1] bg-white px-3 py-1.5 text-xs font-medium text-[#0F172A] hover:border-[#15803D] disabled:opacity-50">
+                <FileSpreadsheet className="h-3.5 w-3.5 text-[#15803D]" aria-hidden="true" /> Export Excel
+              </button>
               <button
                 type="button"
                 onClick={() => void handleExportAudit('csv')}
@@ -784,8 +805,23 @@ export function SettingsView() {
                 <option value="system">Backups & System Events</option>
                 <option value="settings">Policy Settings</option>
                 <option value="admin">Admin Impersonation</option>
+                <option value="auth.">Sign-in and Sign-out</option>
+                <option value="auth.suspicious_activity">Suspicious Activity</option>
               </select>
             </div>
+            <label className="grid gap-1 text-xs font-medium text-[#475569]">
+              Date from (UTC)
+              <input type="date" value={auditAfter} max={auditBefore || undefined} onChange={(event) => setAuditAfter(event.target.value)} className="w-full rounded-lg border border-[#CBD5E1] bg-white px-3 py-1.5 text-[#0F172A]" />
+            </label>
+            <label className="grid gap-1 text-xs font-medium text-[#475569]">
+              Date to (UTC)
+              <input type="date" value={auditBefore} min={auditAfter || undefined} onChange={(event) => setAuditBefore(event.target.value)} className="w-full rounded-lg border border-[#CBD5E1] bg-white px-3 py-1.5 text-[#0F172A]" />
+            </label>
+            <select aria-label="Audit archive" value={auditScope} onChange={(event) => setAuditScope(event.target.value)} className="w-full rounded-lg border border-[#CBD5E1] bg-white px-3 py-1.5 text-xs text-[#0F172A]">
+              <option value="active">Current records</option>
+              <option value="archived">Archived records</option>
+              <option value="all">All records</option>
+            </select>
           </div>
 
           {auditQuery.isLoading ? (

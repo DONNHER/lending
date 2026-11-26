@@ -40,19 +40,135 @@ final class Sessions
         ), 'name');
     }
 
-    public static function begin(array $user, ?array $impersonator = null): array
+    public static function begin(array $user, ?array $impersonator = null, bool $remember = true, ?string $origin = null): array
     {
         $now = CarbonImmutable::now('UTC');
-        $expires = $now->addDays(7);
+        $expires = $remember ? $now->addDays(7) : $now->addHours(12);
         $id = 'sess-'.Str::uuid();
-        $token = JWT::encode([
-            'jti' => $id, 'sub' => $user['id'], 'role' => $user['role'],
-            'impersonated_by' => $impersonator, 'exp' => $expires->getTimestamp(),
-        ], self::key(), 'HS256');
-        Sql::run('INSERT INTO user_sessions (id, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)',
-            [$id, $user['id'], $expires->format('Y-m-d\TH:i:s.v\Z'), $now->format('Y-m-d\TH:i:s.v\Z')]);
+        $record = [
+            'id' => $id,
+            'user_id' => $user['id'],
+            'expires_at' => $expires->format('Y-m-d\TH:i:s.v\Z'),
+            'created_at' => $now->format('Y-m-d\TH:i:s.v\Z'),
+            'last_active_at' => $now->format('Y-m-d\TH:i:s.v\Z'),
+            'remembered' => (int) $remember,
+            'device' => mb_substr(mb_convert_encoding((string) request()->userAgent(), 'UTF-8', 'UTF-8'), 0, 255),
+        ];
+        DB::table('user_sessions')->insert($record);
 
-        return ['token' => $token, 'user' => $user, 'permissions' => self::permissions($user['role']), 'impersonated_by' => $impersonator];
+        return self::payload($user, $record, $impersonator, $origin);
+    }
+
+    private static function payload(array $user, array $record, ?array $impersonator = null, ?string $origin = null): array
+    {
+        $token = JWT::encode([
+            'jti' => $record['id'], 'sub' => $user['id'], 'role' => $user['role'],
+            'impersonated_by' => $impersonator, 'impersonation_origin' => $origin,
+            'exp' => CarbonImmutable::parse($record['expires_at'])->getTimestamp(),
+        ], self::key(), 'HS256');
+
+        return ['token' => $token, 'user' => $user, 'permissions' => self::permissions($user['role']),
+            'impersonated_by' => $impersonator, 'session' => self::describe($record, $user['role'])];
+    }
+
+    public static function validOrigin(string $id, array $admin): ?array
+    {
+        $record = DB::table('user_sessions')->where('id', $id)->where('user_id', $admin['id'])->whereNull('revoked_at')->first();
+        if ($record === null || self::describe((array) $record, $admin['role'])['expires_at'] <= Api::now()) {
+            return null;
+        }
+
+        return (array) $record;
+    }
+
+    public static function resume(array $user, string $id): ?array
+    {
+        $record = self::validOrigin($id, $user);
+
+        return $record === null ? null : self::payload($user, $record);
+    }
+
+    public static function combineImpersonation(array $target, array $origin): array
+    {
+        $target['expires_at'] = min($target['expires_at'], $origin['expires_at']);
+        $target['idle_timeout'] = $target['idle_timeout'] || $origin['idle_timeout'];
+
+        return $target;
+    }
+
+    public static function beginWithPassword(string $userId, string $verifiedHash, bool $remember): ?array
+    {
+        return DB::transaction(function () use ($userId, $verifiedHash, $remember): ?array {
+            $user = DB::table('users')->where('id', $userId)->lockForUpdate()->first(['password_hash', 'account_status']);
+            if ($user === null || $user->account_status !== 'active' || !hash_equals($verifiedHash, $user->password_hash)) {
+                return null;
+            }
+
+            return self::begin(self::userBy('id', $userId), remember: $remember);
+        }, 3);
+    }
+
+    public static function describe(array $session, string $role): array
+    {
+        $idle = $role !== 'cashier';
+        $deadline = $session['expires_at'];
+        if ($idle && $session['last_active_at'] !== null) {
+            $idleDeadline = CarbonImmutable::parse($session['last_active_at'])->addMinutes(30)->format('Y-m-d\TH:i:s.v\Z');
+            $deadline = min($deadline, $idleDeadline);
+        }
+
+        return ['id' => $session['id'], 'expires_at' => $deadline, 'remembered' => (bool) $session['remembered'], 'idle_timeout' => $idle];
+    }
+
+    public static function activateLegacy(array $session): array
+    {
+        if ($session['last_active_at'] !== null) {
+            return $session;
+        }
+        DB::table('user_sessions')->where('id', $session['id'])->whereNull('last_active_at')
+            ->update(['last_active_at' => Api::now()]);
+        $session['last_active_at'] = DB::table('user_sessions')->where('id', $session['id'])->value('last_active_at');
+
+        return $session;
+    }
+
+    public static function refreshActivity(string $id, string $role): ?array
+    {
+        return DB::transaction(function () use ($id, $role): ?array {
+            $query = DB::table('user_sessions')->where('id', $id)->whereNull('revoked_at');
+            $record = $query->lockForUpdate()->first();
+            $now = Api::now();
+            if ($record === null || self::describe((array) $record, $role)['expires_at'] <= $now) {
+                return null;
+            }
+            $query->update(['last_active_at' => $now]);
+            $record->last_active_at = $now;
+
+            return self::describe((array) $record, $role);
+        }, 3);
+    }
+
+    public static function devices(array $user, ?string $current): array
+    {
+        $now = Api::now();
+
+        return DB::table('user_sessions')->where('user_id', $user['id'])->orderByDesc('created_at')->limit(50)
+            ->get()->map(static function (object $record) use ($user, $current, $now): array {
+                $session = self::describe((array) $record, $user['role']);
+
+                return $session + [
+                    'device' => $record->device, 'created_at' => $record->created_at, 'last_active_at' => $record->last_active_at,
+                    'current' => $current === $record->id, 'active' => $record->revoked_at === null && $session['expires_at'] > $now,
+                ];
+            })->all();
+    }
+
+    public static function revokeAll(string $userId): int
+    {
+        DB::table('email_mfa_challenges')->where('user_id', $userId)->where('purpose', 'sign_in')->delete();
+
+        return DB::table('user_sessions')->where('user_id', $userId)->whereNull('revoked_at')->where('expires_at', '>', Api::now())
+            ->update(['revoked_at' => Api::now()]);
     }
 
     public static function revoke(?string $id): void

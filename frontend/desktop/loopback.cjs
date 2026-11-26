@@ -26,11 +26,14 @@ function normalizeApiOrigin(value) {
   } catch {
     throw new Error('Enter the Laravel server URL.');
   }
-  const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  const [first, second] = url.hostname.split('.').map(Number);
+  const privateIpv4 = /^\d+\.\d+\.\d+\.\d+$/.test(url.hostname)
+    && (first === 10 || (first === 172 && second >= 16 && second <= 31) || (first === 192 && second === 168) || first === 127);
+  const local = privateIpv4 || ['localhost', '[::1]'].includes(url.hostname);
   if ((url.protocol !== 'https:' && !(local && url.protocol === 'http:')) ||
       url.username || url.password || url.search || url.hash || url.pathname !== '/' ||
       (local && (url.port === '14783' || url.origin === ORIGIN))) {
-    throw new Error('Use an HTTPS server origin, or HTTP to a Laravel server on this computer.');
+    throw new Error('Use an HTTPS server origin or the private LAN HTTP address of your Laravel server.');
   }
   return url.origin;
 }

@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useCallback, useEffect, useState } from 'react';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { AppShell } from './components/layout/AppShell';
 import { EmptyState, LoadingSkeleton } from './components/ui/StateViews';
 import { ApiError, apiRequest, getStoredToken } from './lib/api';
 import { isPosConnectionError, loadOfflineCashier } from './lib/posOffline';
 import { SettingsView } from './modules/admin/SettingsView';
 import { AuthScreen } from './modules/auth/AuthScreen';
+import { PasswordRecoveryView, readPasswordResetToken } from './modules/auth/PasswordRecoveryView';
+import { SessionGuard } from './modules/auth/SessionGuard';
 import { DashboardView } from './modules/dashboard/DashboardView';
 import { InventoryView } from './modules/inventory/InventoryView';
 import { LoansView } from './modules/loans/LoansView';
@@ -15,9 +17,10 @@ import { usePosSync } from './modules/pos/usePosSync';
 import { ProfileView } from './modules/profile/ProfileView';
 import { ReportsView } from './modules/reports/ReportsView';
 import { ShareholdersView } from './modules/shareholders/ShareholdersView';
+import { membershipQuery } from './modules/shareholders/membershipQuery';
 import { OnlineShopView } from './modules/shop/OnlineShopView';
 import { useAppStore } from './stores/app-store';
-import type { User } from './types/domain';
+import type { AuthSession } from './types/domain';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -31,7 +34,21 @@ const queryClient = new QueryClient({
 function ArgivitRouter() {
   const { session, activeWorkspace, offlineMode, setOfflineMode, setSession, logout } = useAppStore();
   const [booting, setBooting] = useState(Boolean(getStoredToken()));
+  const [resetToken, setResetToken] = useState(readPasswordResetToken);
+  const expireSession = useCallback(() => {
+    queryClient.clear();
+    logout();
+  }, [logout]);
+
+  function closeRecovery() {
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    setResetToken(null);
+  }
   const sync = usePosSync();
+  const membership = useQuery({
+    ...membershipQuery(session?.user.role === 'shareholder' ? session.user.id : undefined),
+    refetchInterval: 15_000,
+  });
 
   useEffect(() => {
     const token = getStoredToken();
@@ -40,7 +57,7 @@ function ArgivitRouter() {
       return;
     }
 
-    apiRequest<{ user: User; impersonated_by?: { id: string; name: string; email: string } | null }>(
+    apiRequest<Omit<AuthSession, 'token'>>(
       '/auth/me', { signal: AbortSignal.timeout(4000) }
     )
       .then((res) => {
@@ -48,6 +65,7 @@ function ArgivitRouter() {
           token,
           user: res.data.user,
           impersonated_by: res.data.impersonated_by ?? null,
+          session: res.data.session,
         });
       })
       .catch((error) => {
@@ -66,6 +84,13 @@ function ArgivitRouter() {
       });
   }, [setSession, setOfflineMode, logout]);
 
+  if (resetToken) {
+    return <PasswordRecoveryView token={resetToken} onBack={closeRecovery} onReset={() => {
+      expireSession();
+      closeRecovery();
+    }} />;
+  }
+
   if (booting) {
     return (
       <div className="mx-auto max-w-4xl p-8">
@@ -78,9 +103,19 @@ function ArgivitRouter() {
     return <AuthScreen />;
   }
 
-  const workspace = offlineMode && session.user.role === 'cashier' ? 'pos' : activeWorkspace;
+  const loanAccess = session.user.role !== 'shareholder' || (!membership.isError && membership.data?.loan_access === true);
+  const loanPortal = import.meta.env.VITE_ARGIVET_ENTRY === 'loan';
+  let workspace = offlineMode && session.user.role === 'cashier' ? 'pos' : activeWorkspace;
+  if (loanPortal && !['loans', 'shareholders', 'profile'].includes(workspace)) {
+    workspace = session.user.role === 'cashier' ? 'profile' : 'shareholders';
+  }
+  if (workspace === 'loans' && !loanAccess) workspace = 'shareholders';
   return (
-    <AppShell>
+    <AppShell activeWorkspace={workspace} loanAccess={loanAccess}>
+      {session.session && (
+        <SessionGuard key={session.session.id} token={session.token} initial={session.session}
+          offline={offlineMode} onExpired={expireSession} />
+      )}
       {workspace === 'dashboard' && <DashboardView />}
       {workspace === 'pos' && <PosTerminalView {...sync} />}
       {workspace === 'shop' && <OnlineShopView />}

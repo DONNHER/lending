@@ -17,8 +17,15 @@ interface LoanApplicationFormProps {
   onSubmit: (draft: LoanApplicationDraft) => void;
 }
 
+const APPLICATION_STEPS = [
+  { id: 'amount', label: 'Amount', title: 'How much do you need?' },
+  { id: 'plan', label: 'Repayment', title: 'Choose a repayment plan' },
+  { id: 'review', label: 'Review', title: 'Review your application' },
+] as const;
+type ApplicationStep = (typeof APPLICATION_STEPS)[number]['id'];
+
 export function LoanApplicationForm({ availableCredit, interestRate, isPending, onCancel, onSubmit }: LoanApplicationFormProps) {
-  const [step, setStep] = useState<'amount' | 'plan' | 'review'>('amount');
+  const [step, setStep] = useState<ApplicationStep>('amount');
   const [amount, setAmount] = useState('');
   const [term, setTerm] = useState(6);
   const [purpose, setPurpose] = useState('');
@@ -28,7 +35,7 @@ export function LoanApplicationForm({ availableCredit, interestRate, isPending, 
   const total = roundCurrency(principal + interest);
   const validAmount = Number.isFinite(principal) && principal >= 1 && principal <= availableCredit;
   const validPurpose = purpose.trim().length >= 5;
-  const title = step === 'amount' ? 'How much do you need?' : step === 'plan' ? 'Choose a repayment plan' : 'Review your application';
+  const currentStep = APPLICATION_STEPS.findIndex(({ id }) => id === step);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -49,20 +56,24 @@ export function LoanApplicationForm({ availableCredit, interestRate, isPending, 
   }
 
   return (
-    <section aria-labelledby="loan-application-title" className="mx-auto w-full max-w-xl overflow-hidden rounded-2xl border border-emerald-100 bg-white shadow-sm">
-      <div className="bg-emerald-950 px-5 py-6 text-white sm:px-7">
-        <button type="button" onClick={goBack} disabled={isPending} className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100 disabled:opacity-50">
-          <ArrowLeft className="h-4 w-4" /> Back
+    <section aria-labelledby="loan-application-title" className="mx-auto w-full max-w-2xl space-y-4">
+      <header>
+        <button type="button" onClick={goBack} disabled={isPending} className="inline-flex min-h-11 items-center gap-2 rounded-lg text-sm font-semibold text-[#14532D] disabled:opacity-50">
+          <ArrowLeft aria-hidden="true" className="h-4 w-4" /> {step === 'amount' ? 'Loan overview' : 'Previous step'}
         </button>
-        <div className="mt-5 flex gap-2" aria-hidden="true">
-          <span className="h-1 flex-1 rounded-full bg-emerald-300" />
-          <span className={`h-1 flex-1 rounded-full ${step === 'amount' ? 'bg-white/20' : 'bg-emerald-300'}`} />
-          <span className={`h-1 flex-1 rounded-full ${step === 'review' ? 'bg-emerald-300' : 'bg-white/20'}`} />
-        </div>
-        <h2 id="loan-application-title" className="mt-3 text-2xl font-semibold" aria-live="polite">{title}</h2>
-      </div>
+        <h1 id="loan-application-title" className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">Loan application</h1>
+      </header>
 
-      <form onSubmit={handleSubmit} className="space-y-5 p-5 sm:p-7">
+      <ol aria-label="Application progress" className="grid grid-cols-3 gap-3 rounded-xl border border-[#E2E8E4] bg-white p-3 sm:p-4">
+        {APPLICATION_STEPS.map(({ id, label }, index) => (
+          <li key={id} aria-current={step === id ? 'step' : undefined} className={`border-t-4 pt-2 text-xs font-semibold sm:text-sm ${index <= currentStep ? 'border-[#15803D] text-[#14532D]' : 'border-[#E2E8E4] text-slate-500'}`}>
+            {label}
+          </li>
+        ))}
+      </ol>
+
+      <form onSubmit={handleSubmit} className="space-y-5 rounded-2xl border border-[#E2E8E4] bg-white p-5 sm:p-7">
+        <h2 className="text-xl font-bold text-slate-950" aria-live="polite">{APPLICATION_STEPS[currentStep].title}</h2>
         {step === 'amount' && (
           <div>
             <label htmlFor="loan-amount" className="block text-sm font-semibold text-slate-800">Loan amount</label>

@@ -14,7 +14,23 @@ export interface User {
   created_at: string;
 }
 
+export interface SessionStatus {
+  id: string;
+  expires_at: string;
+  remembered: boolean;
+  idle_timeout: boolean;
+}
+
+export interface AccountDevice extends SessionStatus {
+  device: string | null;
+  created_at: string;
+  last_active_at: string | null;
+  active: boolean;
+  current: boolean;
+}
+
 export interface AuthSession {
+  session?: SessionStatus | null;
   token: string;
   user: User;
   impersonated_by?: {
@@ -51,10 +67,12 @@ export interface ShareholderProfile {
   created_at: string;
 }
 
+export type LandPaperType = 'original_land_paper' | 'notarized_land_paper';
+
 export interface ShareholderDocument {
   id: string;
   shareholder_id: string;
-  document_type: 'government_id' | 'proof_of_residency' | 'farm_registration' | 'membership_form';
+  document_type: LandPaperType | 'government_id' | 'proof_of_residency' | 'farm_registration' | 'membership_form';
   file_name: string;
   file_path: string;
   has_file?: boolean;

@@ -1,0 +1,99 @@
+name: agrivet-ledger
+
+x-api: &api
+  image: agrivet-ledger-api:${APP_VERSION:-dev}
+  build:
+    context: ../..
+    dockerfile: backend/deploy/Dockerfile
+    target: api
+    args:
+      APP_VERSION: ${APP_VERSION:-dev}
+  restart: unless-stopped
+  environment: &api-env
+    APP_ENV: production
+    APP_DEBUG: "false"
+    APP_KEY: ${ARGIVET_APP_KEY:?Set ARGIVET_APP_KEY in the server env file}
+    LOG_CHANNEL: stderr
+    DB_CONNECTION: pgsql
+    DB_PGSQL_HOST: postgres
+    DB_PGSQL_DATABASE: ${ARGIVET_DB_NAME:-agrivet_ledger}
+    DB_PGSQL_USERNAME: ${ARGIVET_DB_USER:-agrivet_ledger}
+    DB_PGSQL_PASSWORD: ${ARGIVET_DB_PASSWORD:?Set ARGIVET_DB_PASSWORD in the server env file}
+    DB_SSLMODE: disable
+    DOCUMENT_STORAGE_DISK: local
+    CACHE_STORE: file
+    SESSION_DRIVER: array
+    ARGIVET_EMAIL_MFA: ${ARGIVET_EMAIL_MFA:-false}
+    ARGIVET_WEB_URL: ${ARGIVET_WEB_URL:-}
+    MAIL_HOST: ${MAIL_HOST:-localhost}
+    MAIL_PORT: ${MAIL_PORT:-465}
+    MAIL_SCHEME: ${MAIL_SCHEME:-smtps}
+    MAIL_USERNAME: ${MAIL_USERNAME:-}
+    MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+    MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-argivet@example.test}
+  volumes:
+    - storage:/srv/argivet/storage
+  depends_on:
+    postgres:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1/api/v1/health') === false ? 1 : 0);"]
+    interval: 5s
+    timeout: 4s
+    retries: 15
+
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${ARGIVET_DB_NAME:-agrivet_ledger}
+      POSTGRES_USER: ${ARGIVET_DB_USER:-agrivet_ledger}
+      POSTGRES_PASSWORD: ${ARGIVET_DB_PASSWORD:?Set ARGIVET_DB_PASSWORD in the server env file}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+  pos_api:
+    <<: *api
+    ports:
+      - "${ARGIVET_LAN_IP:?Set ARGIVET_LAN_IP}:${ARGIVET_POS_PORT:-8081}:80"
+
+  loan_api:
+    <<: *api
+
+  loan_web:
+    image: agrivet-ledger-loan:${APP_VERSION:-dev}
+    build:
+      context: ../..
+      dockerfile: backend/deploy/Dockerfile
+      target: loan
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${ARGIVET_LOAN_PORT:-8082}:8080"
+    depends_on:
+      loan_api:
+        condition: service_healthy
+
+  scheduler:
+    <<: *api
+    command: ["php", "artisan", "schedule:work"]
+    user: www-data
+    healthcheck:
+      disable: true
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    command: ["tunnel", "--no-autoupdate", "--protocol", "http2", "--url", "http://loan_web:8080"]
+    profiles: [quick-tunnel]
+    restart: unless-stopped
+    depends_on:
+      - loan_web
+
+volumes:
+  postgres:
+  storage:

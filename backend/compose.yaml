@@ -1,22 +1,31 @@
-name: argivit
+name: agrivet_ledger
 
 services:
   postgres:
     image: postgres:17
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DOCKER_PG_DATABASE:-argivit}
-      POSTGRES_USER: ${DOCKER_PG_USERNAME:-argivit}
+      POSTGRES_DB: ${DOCKER_PG_DATABASE:-agrivet_ledger}
+      POSTGRES_USER: ${DOCKER_PG_USERNAME:-agrivet_ledger}
       POSTGRES_PASSWORD: ${DOCKER_PG_PASSWORD:?Set DOCKER_PG_PASSWORD in backend/.env}
     ports:
       - "127.0.0.1:${DOCKER_PG_PORT:-55432}:5432"
     volumes:
-      - argivit_postgres:/var/lib/postgresql/data
+      - agrivet_ledger_postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 5s
       retries: 12
 
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: >
+      tunnel --no-autoupdate --protocol http2
+      --url http://host.docker.internal:${LARAVEL_PORT:-8000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
 volumes:
-  argivit_postgres:
+  agrivet_ledger_postgres:

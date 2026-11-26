@@ -4,6 +4,26 @@ namespace App\Support;
 
 class Membership
 {
+    public const LAND_DOCUMENT_TYPES = ['original_land_paper', 'notarized_land_paper'];
+
+    public static function canAccessLoans(array $profile, float $paid, float $required): bool
+    {
+        return $profile['verification_status'] === 'approved' && $required > 0 && $paid >= $required;
+    }
+
+    public static function hasApprovedLandPaper(string $shareholderId): bool
+    {
+        $documents = Sql::all('SELECT file_path FROM shareholder_documents WHERE shareholder_id = ? AND document_type IN (?, ?) AND review_status = ?',
+            [$shareholderId, ...self::LAND_DOCUMENT_TYPES, 'approved']);
+        foreach ($documents as $document) {
+            if (VerificationDocuments::hasFile($document['file_path'])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public static function forUser(string $userId): ?array
     {
         return Sql::one('SELECT * FROM shareholder_profiles WHERE user_id = ?', [$userId]);

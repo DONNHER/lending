@@ -197,7 +197,7 @@ class LoanLedger
 
         $waitingUntil = $restriction['next_eligible_at'] ?? null;
         $blocked = match (true) {
-            $shareholder['verification_status'] !== 'approved' || $required <= 0 || $paid < $required => [
+            !Membership::canAccessLoans($shareholder, $paid, $required) => [
                 'reason' => 'Membership verification and full initial share capital payment are required.',
                 'stage' => 'MEMBERSHIP',
                 'maximum_loan' => 0,

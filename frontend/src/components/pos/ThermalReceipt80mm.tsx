@@ -1,10 +1,12 @@
-import { useEffect, useMemo } from 'react';
-import { Printer, Usb, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Download, X } from 'lucide-react';
 import {
-  encodeCode128B,
-  formatMoneyPlain,
-  type ConnectedThermalPrinter,
-} from '../../lib/posHardware';
+  RECEIPT_FOOTER,
+  RECEIPT_STORE,
+  RECEIPT_SUBTITLE,
+  receiptBarcode,
+  saleReceiptDetails,
+} from '../../lib/saleReceipt';
 import type { Sale } from '../../types/domain';
 
 interface Code128BarcodeSvgProps {
@@ -13,30 +15,19 @@ interface Code128BarcodeSvgProps {
 }
 
 export function Code128BarcodeSvg({ value, height = 38 }: Code128BarcodeSvgProps) {
-  const widths = useMemo(() => encodeCode128B(value), [value]);
-  if (!widths) return null;
-
-  const bars: Array<{ x: number; w: number }> = [];
-  let cursor = 10; // 10-module quiet zone
-  for (let i = 0; i < widths.length; i += 1) {
-    const w = Number(widths[i]);
-    if (i % 2 === 0) {
-      bars.push({ x: cursor, w });
-    }
-    cursor += w;
-  }
-  const totalWidth = cursor + 10;
+  const barcode = useMemo(() => receiptBarcode(value), [value]);
+  if (!barcode) return null;
 
   return (
     <svg
-      viewBox={`0 0 ${totalWidth} ${height}`}
+      viewBox={[0, 0, barcode.width, height].join(' ')}
       className="mx-auto h-10 w-full max-w-[230px]"
       role="img"
-      aria-label={`1D Barcode ${value}`}
+      aria-label={'1D Barcode ' + value}
     >
-      <rect x={0} y={0} width={totalWidth} height={height} fill="#ffffff" />
-      {bars.map((bar, idx) => (
-        <rect key={idx} x={bar.x} y={0} width={bar.w} height={height} fill="#000000" />
+      <rect width={barcode.width} height={height} fill="#fff" />
+      {barcode.bars.map((bar) => (
+        <rect key={bar.x} x={bar.x} width={bar.width} height={height} fill="#000" />
       ))}
     </svg>
   );
@@ -45,117 +36,60 @@ export function Code128BarcodeSvg({ value, height = 38 }: Code128BarcodeSvgProps
 interface ThermalReceipt80mmSheetProps {
   sale: Sale;
   cashierName?: string;
-  forPrint?: boolean;
 }
 
-export function ThermalReceipt80mmSheet({
-  sale,
-  cashierName,
-  forPrint = false,
-}: ThermalReceipt80mmSheetProps) {
-  const totalBaseKg = sale.items.reduce((sum, item) => sum + item.quantity_base, 0);
-  const formattedDate = (() => {
-    const d = new Date(sale.created_at);
-    return Number.isNaN(d.getTime())
-      ? sale.created_at
-      : d.toLocaleString('en-PH', {
-          year: 'numeric',
-          month: 'short',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-        });
-  })();
+export function ThermalReceipt80mmSheet({ sale, cashierName }: ThermalReceipt80mmSheetProps) {
+  const { facts, items, payment, total } = saleReceiptDetails(sale, cashierName);
 
   return (
-    <div
-      id={forPrint ? 'thermal-receipt-print-area' : undefined}
-      className="mx-auto w-[302px] max-w-full border border-dashed border-[#CBD5E1] bg-white px-3.5 py-4 font-mono text-[11px] leading-[1.45] text-black"
-    >
-      <div className="text-center">
-        <div className="text-[13px] font-bold tracking-tight">ARGIVIT COOPERATIVE</div>
-        <div className="text-[10px]">Agricultural Supply Store · 80mm POS</div>
+    <div className="mx-auto w-[80mm] max-w-full border border-dashed border-[#CBD5E1] bg-white p-[5mm] font-mono text-[11px] leading-[1.45] text-black">
+      <div className="border-b border-dashed border-black pb-2 text-center">
+        <div className="text-[13px] font-bold">{RECEIPT_STORE}</div>
+        <div>{RECEIPT_SUBTITLE}</div>
       </div>
 
-      <div className="my-2 border-t border-dashed border-black" />
+      <dl className="space-y-0.5 border-b border-dashed border-black py-2">
+        {facts.map(([label, value]) => (
+          <div key={label} className="flex justify-between gap-2">
+            <dt className="shrink-0">{label}</dt>
+            <dd className="min-w-0 break-words text-right">{value}</dd>
+          </div>
+        ))}
+      </dl>
 
-      <div className="space-y-0.5 text-[10.5px]">
-        <div className="flex justify-between gap-2">
-          <span>Receipt #:</span>
-          <span className="font-bold">{sale.sale_number}</span>
-        </div>
-        <div className="flex justify-between gap-2">
-          <span>Date:</span>
-          <span>{formattedDate}</span>
-        </div>
-        <div className="flex justify-between gap-2">
-          <span>Terminal:</span>
-          <span>{sale.terminal_id}</span>
-        </div>
-        <div className="flex justify-between gap-2">
-          <span>Cashier:</span>
-          <span>{cashierName || sale.cashier_name || 'POS Cashier'}</span>
-        </div>
-        <div className="flex justify-between gap-2">
-          <span>Source:</span>
-          <span className="uppercase">{sale.source.replace('_', ' ')}</span>
-        </div>
-      </div>
-
-      <div className="my-2 border-t border-dashed border-black" />
-
-      <div className="flex justify-between text-[10px] font-bold uppercase">
+      <div className="flex justify-between gap-2 border-b border-dashed border-black py-1 text-[10px] font-bold uppercase">
         <span>Item / Qty</span>
         <span>Amount</span>
       </div>
 
-      <div className="my-1 border-t border-dashed border-black" />
-
-      <div className="space-y-2">
-        {sale.items.map((item) => (
-          <div key={item.id}>
-            <div className="font-semibold leading-snug">{item.product_name}</div>
-            <div className="flex justify-between gap-2 text-[10.5px]">
-              <span>
-                {item.quantity} × {item.unit_name}
-              </span>
-              <span className="tabular-nums font-medium">{formatMoneyPlain(item.line_total)}</span>
+      <ul className="space-y-2 border-b border-dashed border-black py-2">
+        {items.map((item) => (
+          <li key={item.id}>
+            <div className="break-words font-semibold">{item.name}</div>
+            <div className="flex justify-between gap-2">
+              <span>{item.unit}</span>
+              <span className="shrink-0 font-medium tabular-nums">{item.total}</span>
             </div>
-            <div className="text-[9.5px] text-neutral-700">
-              {item.sku} · @{formatMoneyPlain(item.unit_price)} · -{item.quantity_base} kg
-            </div>
-          </div>
+            <div className="break-words text-[10px] text-neutral-700">{item.detail}</div>
+          </li>
         ))}
-      </div>
+      </ul>
 
-      <div className="my-2 border-t border-dashed border-black" />
+      <dl className="py-2">
+        <div className="flex justify-between gap-2">
+          <dt>Payment</dt>
+          <dd>{payment}</dd>
+        </div>
+        <div className="mt-2 flex justify-between gap-2 border-y-2 border-double border-black py-1 text-[13px] font-bold">
+          <dt>Total</dt>
+          <dd className="tabular-nums">{total}</dd>
+        </div>
+      </dl>
 
-      <div className="space-y-0.5 text-[10.5px]">
-        <div className="flex justify-between">
-          <span>Line Items:</span>
-          <span>{sale.items.length}</span>
-        </div>
-        <div className="flex justify-between">
-          <span>Base Stock Deducted:</span>
-          <span>{totalBaseKg} kg</span>
-        </div>
-        <div className="flex justify-between">
-          <span>Payment Method:</span>
-          <span className="uppercase">{sale.payment_method.replace('_', ' ')}</span>
-        </div>
-      </div>
-
-      <div className="my-2 border-t-2 border-b-2 border-double border-black py-1.5">
-        <div className="flex justify-between text-[13px] font-bold">
-          <span>TOTAL DUE</span>
-          <span className="tabular-nums">{formatMoneyPlain(sale.total)}</span>
-        </div>
-      </div>
-
-      <div className="mt-2.5 text-center">
+      <div className="text-center text-[10px]">
         <Code128BarcodeSvg value={sale.sale_number} height={36} />
-        <div className="mt-1 text-[10px] tracking-wider">*{sale.sale_number}*</div>
-        <div className="mt-1 text-[10px]">Thank you for supporting Argivit Coop!</div>
+        <div className="mt-1 break-all tracking-wide">{sale.sale_number}</div>
+        <div className="mt-1">{RECEIPT_FOOTER}</div>
       </div>
     </div>
   );
@@ -164,97 +98,95 @@ export function ThermalReceipt80mmSheet({
 interface ThermalReceiptModalProps {
   sale: Sale | null;
   cashierName?: string;
-  connectedPrinter: ConnectedThermalPrinter | null;
-  isPrintingEscPos: boolean;
-  onPrintBrowser: (sale: Sale) => void;
-  onPrintEscPos: (sale: Sale) => void;
   onClose: () => void;
 }
 
-export function ThermalReceiptModal({
-  sale,
-  cashierName,
-  connectedPrinter,
-  isPrintingEscPos,
-  onPrintBrowser,
-  onPrintEscPos,
-  onClose,
-}: ThermalReceiptModalProps) {
+export function ThermalReceiptModal({ sale, cashierName, onClose }: ThermalReceiptModalProps) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState(false);
+  const isOpen = sale !== null;
+
   useEffect(() => {
-    if (!sale) return;
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
+    const element = dialog.current;
+    if (isOpen && element && !element.open) element.showModal();
+  }, [isOpen]);
+
+  function close() {
+    dialog.current?.close();
+    setExportError(false);
+    onClose();
+  }
+
+  async function exportPdf(receipt: Sale) {
+    setExporting(true);
+    setExportError(false);
+    try {
+      const { createSaleReceiptPdf } = await import('../../lib/saleReceiptPdf');
+      const filename = receipt.sale_number.replace(/[^\w-]/g, '-');
+      createSaleReceiptPdf(receipt, cashierName).save('receipt-' + filename + '.pdf');
+    } catch {
+      setExportError(true);
+    } finally {
+      setExporting(false);
     }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [sale, onClose]);
+  }
 
   if (!sale) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="fixed inset-0 bg-slate-900/50" onClick={onClose} />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="thermal-preview-title"
-        className="relative z-10 flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-xl border border-[#E2E8E4] bg-white shadow-xl"
-      >
-        <div className="flex items-center justify-between border-b border-[#E2E8E4] px-5 py-3.5">
+    <dialog
+      ref={dialog}
+      aria-labelledby="thermal-preview-title"
+      onCancel={(event) => {
+        event.preventDefault();
+        close();
+      }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) close();
+      }}
+      className="m-auto w-[calc(100%_-_2rem)] max-w-md overflow-hidden rounded-xl border border-[#E2E8E4] bg-white p-0 shadow-xl backdrop:bg-slate-900/50"
+    >
+      <div className="flex max-h-[85dvh] flex-col">
+        <header className="flex items-center justify-between gap-3 border-b border-[#E2E8E4] px-5 py-3.5">
           <div>
-            <h2
-              id="thermal-preview-title"
-              className="font-display text-base font-semibold text-[#0F172A]"
-            >
-              80mm Thermal Receipt Preview
+            <h2 id="thermal-preview-title" className="font-display text-base font-semibold text-[#0F172A]">
+              80 mm receipt preview
             </h2>
-            <p className="text-xs text-[#64748B]">
-              48-column roll format · {sale.sale_number}
-            </p>
+            <p className="break-all text-xs text-[#64748B]">{sale.sale_number}</p>
           </div>
           <button
             type="button"
-            aria-label="Close 80mm receipt preview"
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#F7F9F8] hover:text-[#0F172A]"
+            aria-label="Close receipt preview"
+            onClick={close}
+            className="rounded-lg p-2 text-[#475569] hover:bg-[#F7F9F8] focus-visible:outline-2 focus-visible:outline-[#15803D]"
           >
-            <X className="h-4 w-4" />
+            <X className="h-5 w-5" aria-hidden="true" />
           </button>
-        </div>
+        </header>
 
-        <div className="overflow-y-auto bg-[#F7F9F8] p-5">
+        <div className="min-h-0 flex-1 overflow-y-auto bg-[#F7F9F8] p-4 sm:p-5">
           <ThermalReceipt80mmSheet sale={sale} cashierName={cashierName} />
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[#E2E8E4] bg-white px-5 py-3.5">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg border border-[#CBD5E1] bg-white px-3.5 py-2 text-xs font-medium text-[#334155] hover:bg-[#F7F9F8]"
-          >
-            Close
-          </button>
-          {connectedPrinter ? (
+        <footer className="border-t border-[#E2E8E4] bg-white px-5 py-3.5">
+          {exportError && <p role="alert" className="mb-2 text-sm text-red-700">The PDF could not be exported. Try again.</p>}
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={close} className="rounded-lg border border-[#CBD5E1] px-3.5 py-2 text-sm font-medium text-[#334155] hover:bg-[#F7F9F8]">
+              Close
+            </button>
             <button
               type="button"
-              disabled={isPrintingEscPos}
-              onClick={() => onPrintEscPos(sale)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-[#15803D] bg-[#F0FDF4] px-3.5 py-2 text-xs font-semibold text-[#15803D] hover:bg-emerald-100 disabled:opacity-50"
+              disabled={exporting}
+              onClick={() => void exportPdf(sale)}
+              className="inline-flex items-center gap-2 rounded-lg bg-[#15803D] px-4 py-2 text-sm font-semibold text-white hover:bg-[#166534] disabled:opacity-50"
             >
-              <Usb className="h-3.5 w-3.5" />
-              {isPrintingEscPos ? 'Sending ESC/POS...' : 'ESC/POS Direct Print'}
+              <Download className="h-4 w-4" aria-hidden="true" />
+              {exporting ? 'Exporting…' : 'Export PDF'}
             </button>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => onPrintBrowser(sale)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-[#15803D] px-4 py-2 text-xs font-semibold text-white hover:bg-[#166534]"
-          >
-            <Printer className="h-3.5 w-3.5" />
-            Print 80mm Receipt
-          </button>
-        </div>
+          </div>
+        </footer>
       </div>
-    </div>
+    </dialog>
   );
 }

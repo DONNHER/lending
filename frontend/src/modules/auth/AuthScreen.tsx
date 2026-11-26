@@ -4,6 +4,8 @@ import { apiRequest, ApiError } from '../../lib/api';
 import { STORE_HERO_IMAGE } from '../../lib/productAssets';
 import { useAppStore } from '../../stores/app-store';
 import type { AuthSession } from '../../types/domain';
+import { PasswordRecoveryView } from './PasswordRecoveryView';
+import { getDesktopPosBridge } from '../../lib/posOffline';
 
 const DEMO_ACCOUNTS = [
   {
@@ -32,11 +34,22 @@ const DEMO_ACCOUNTS = [
   },
 ];
 
+interface EmailChallenge {
+  mfa_required: true;
+  challenge_id: string;
+  email_hint: string;
+  expires_in: number;
+}
+
 export function AuthScreen() {
   const setSession = useAppStore((s) => s.setSession);
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const desktopRegister = Boolean(getDesktopPosBridge());
+  const [remember, setRemember] = useState(false);
+  const [recoveryAvailable, setRecoveryAvailable] = useState(false);
+  const [recovering, setRecovering] = useState(false);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [contactNumber, setContactNumber] = useState('');
@@ -44,13 +57,19 @@ export function AuthScreen() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
-  const [showDemo, setShowDemo] = useState(false);
+  const [demoEmails, setDemoEmails] = useState<string[]>([]);
+  const [challenge, setChallenge] = useState<EmailChallenge | null>(null);
+  const [code, setCode] = useState('');
+  const demoAccounts = DEMO_ACCOUNTS.filter((account) => demoEmails.includes(account.email));
 
   useEffect(() => {
     let active = true;
-    void apiRequest<{ auth_url: string | null; demo_accounts: boolean }>('/auth/config')
+    void apiRequest<{ demo_account_emails?: string[]; password_recovery?: boolean }>('/auth/config')
       .then((res) => {
-        if (active) setShowDemo(res.data.demo_accounts);
+        if (active) {
+          setDemoEmails(res.data.demo_account_emails ?? []);
+          setRecoveryAvailable(res.data.password_recovery === true);
+        }
       })
       .catch(() => {});
     return () => {
@@ -63,16 +82,44 @@ export function AuthScreen() {
     setFieldErrors(error instanceof ApiError ? error.errors ?? {} : {});
   }
 
+  function completePasswordStep(result: AuthSession | EmailChallenge, targetEmail: string) {
+    if ('mfa_required' in result) {
+      setEmail(targetEmail);
+      setPassword('');
+      setCode('');
+      setChallenge(result);
+      return;
+    }
+    setSession(result);
+  }
+
+  async function verifyCode(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!challenge || loading || code.length !== 6) return;
+    setLoading(true);
+    setErrorMsg(null);
+    try {
+      const response = await apiRequest<AuthSession>('/auth/mfa/verify', {
+        method: 'POST', body: JSON.stringify({ challenge_id: challenge.challenge_id, code }),
+      });
+      setSession(response.data);
+    } catch (error) {
+      showError(error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleLogin(targetEmail: string, targetPassword: string) {
     setLoading(true);
     setErrorMsg(null);
     setFieldErrors({});
     try {
-      const res = await apiRequest<AuthSession>('/auth/login', {
+      const res = await apiRequest<AuthSession | EmailChallenge>('/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ email: targetEmail, password: targetPassword }),
+        body: JSON.stringify({ email: targetEmail, password: targetPassword, remember: desktopRegister || remember }),
       });
-      setSession(res.data);
+      completePasswordStep(res.data, targetEmail);
     } catch (err) {
       showError(err);
     } finally {
@@ -92,16 +139,51 @@ export function AuthScreen() {
     setFieldErrors({});
     try {
       const profile = { first_name: firstName, last_name: lastName, contact_number: contactNumber, address };
-      const res = await apiRequest<AuthSession>('/auth/register', {
+      const res = await apiRequest<AuthSession | EmailChallenge>('/auth/register', {
         method: 'POST',
         body: JSON.stringify({ ...profile, email, password }),
       });
-      setSession(res.data);
+      completePasswordStep(res.data, email);
     } catch (err) {
       showError(err);
     } finally {
       setLoading(false);
     }
+  }
+
+  if (recovering) {
+    return <PasswordRecoveryView emailSuggestion={email} onBack={() => setRecovering(false)} />;
+  }
+
+  if (challenge) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[#F7F9F8] p-5">
+        <section aria-labelledby="email-code-title" className="w-full max-w-md space-y-5 rounded-2xl border border-[#E2E8E4] bg-white p-6 sm:p-8">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-[#166534]">
+            <ShieldCheck aria-hidden="true" className="h-5 w-5" />
+          </div>
+          <div>
+            <h1 id="email-code-title" className="text-2xl font-bold text-slate-950">Check your email</h1>
+            <p id="email-code-hint" className="mt-2 break-words text-sm text-slate-600">Enter the six-digit code sent to {challenge.email_hint}. It expires in {Math.ceil(challenge.expires_in / 60)} minutes.</p>
+          </div>
+          <form onSubmit={verifyCode} className="space-y-4">
+            <label htmlFor="email-code" className="block text-sm font-semibold text-slate-800">
+              Verification code
+              <input id="email-code" autoFocus autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required
+                value={code} onChange={(event) => setCode(event.target.value.replace(/[^0-9]/g, ''))} aria-invalid={Boolean(errorMsg)}
+                aria-describedby={errorMsg ? 'email-code-hint email-code-error' : 'email-code-hint'}
+                className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 px-4 font-mono text-xl tracking-[0.3em] focus:border-[#15803D] focus:outline-none focus:ring-2 focus:ring-emerald-100" />
+            </label>
+            {errorMsg && <p id="email-code-error" role="alert" className="text-sm text-red-700">{errorMsg}</p>}
+            <button type="submit" disabled={loading || code.length !== 6} className="min-h-11 w-full rounded-xl bg-[#15803D] px-4 text-sm font-semibold text-white hover:bg-[#166534] disabled:opacity-50">
+              {loading ? 'Verifying…' : 'Verify and sign in'}
+            </button>
+            <button type="button" disabled={loading} onClick={() => { setChallenge(null); setCode(''); setErrorMsg(null); setFieldErrors({}); setMode('login'); }}
+              className="min-h-11 w-full text-sm font-semibold text-[#14532D] underline underline-offset-4 disabled:opacity-50">Back to sign in</button>
+          </form>
+        </section>
+      </main>
+    );
   }
 
   return (
@@ -287,12 +369,14 @@ export function AuthScreen() {
               <input
                 id="auth-password"
                 type="password"
+                minLength={mode === 'register' ? 8 : undefined}
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter password"
                 className="mt-1 w-full rounded-lg border border-[#CBD5E1] bg-white px-3 py-2 text-sm focus:border-[#15803D] focus:outline-none focus:ring-2 focus:ring-[#15803D]/20"
               />
+              {mode === 'register' && <p className="mt-1 text-xs text-slate-600">Use at least eight characters with uppercase and lowercase letters, a number, and a symbol.</p>}
               {fieldErrors.password ? (
                 <p className="mt-1 text-xs text-[#DC2626]">{fieldErrors.password[0]}</p>
               ) : null}
@@ -329,6 +413,24 @@ export function AuthScreen() {
               </div>
             ) : null}
 
+            {mode === 'login' && (!desktopRegister || recoveryAvailable) && (
+              <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+                {!desktopRegister && (
+                  <label className="inline-flex min-h-8 items-center gap-2">
+                    <input type="checkbox" className="h-4 w-4 accent-emerald-700" checked={remember}
+                      onChange={(event) => setRemember(event.target.checked)} />
+                    Remember me
+                  </label>
+                )}
+                {recoveryAvailable && (
+                  <button type="button" disabled={loading} onClick={() => { setPassword(''); setErrorMsg(null); setRecovering(true); }}
+                    className="ml-auto min-h-8 font-semibold text-emerald-800 underline underline-offset-4">
+                    Forgot password?
+                  </button>
+                )}
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={loading}
@@ -339,13 +441,13 @@ export function AuthScreen() {
             </button>
           </form>
 
-          {mode === 'login' && showDemo ? (
+          {mode === 'login' && demoAccounts.length > 0 ? (
             <div className="border-t border-[#E2E8E4] pt-5">
               <div className="mb-3 text-xs font-medium text-[#475569]">
                 Quick Workspace Access (Seeded Roles)
               </div>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {DEMO_ACCOUNTS.map((acct) => (
+                {demoAccounts.map((acct) => (
                   <button
                     key={acct.email}
                     type="button"

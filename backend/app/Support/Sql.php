@@ -12,13 +12,10 @@ final class Sql
 
     public static function serialized(int $scope, Closure $operation, int $attempts = 3): mixed
     {
-        // SQLite's immediate transaction serializes writers. On Postgres, keep each ledger's
-        // read-then-write checks atomic without blocking unrelated application writes.
         return DB::transaction(static function () use ($scope, $operation): mixed {
             if (DB::connection()->getDriverName() === 'pgsql') {
                 DB::selectOne('SELECT pg_advisory_xact_lock(742931, CAST(? AS INTEGER))', [$scope]);
             }
-
             return $operation();
         }, $attempts);
     }
@@ -43,7 +40,6 @@ final class Sql
     public static function one(string $query, array $bindings = []): ?array
     {
         $row = DB::selectOne($query, $bindings);
-
         return $row === null ? null : (array) $row;
     }
 

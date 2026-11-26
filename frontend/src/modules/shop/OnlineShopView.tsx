@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CheckCircle2,
@@ -8,6 +8,7 @@ import {
   Plus,
   QrCode,
   Search,
+  Sparkles,
   Trash2,
   X,
 } from 'lucide-react';
@@ -28,6 +29,12 @@ interface ShopCatalogMeta {
   categories?: string[];
 }
 
+interface ShopAssistance {
+  explanation: string;
+  products: Product[];
+  fallback: boolean;
+}
+
 const SHOP_PAGE_SIZE = 8;
 type CatalogSort = 'name' | 'newest' | 'oldest' | 'price_asc' | 'price_desc';
 const SELECT_STYLE = 'w-full min-w-0 rounded-lg border border-[#CBD5E1] bg-white px-3 py-2 text-sm text-[#334155] focus:border-[#15803D] focus:outline-none focus:ring-2 focus:ring-[#15803D]/20';
@@ -46,9 +53,15 @@ export function OnlineShopView() {
   } = useCartStore();
 
   const selectedCategory = useAppStore((s) => s.subTabs.shop);
+  const canAsk = useAppStore((s) => s.session?.user.role === 'shareholder');
   const setWorkspaceSubTab = useAppStore((s) => s.setWorkspaceSubTab);
+  const searchInput = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [aiMode, setAiMode] = useState(false);
+  const [questionDraft, setQuestionDraft] = useState('');
+  const [submittedQuestion, setSubmittedQuestion] = useState<{ question: string; category: string } | null>(null);
+  const aiSearch = canAsk && aiMode;
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState<CatalogSort>('name');
   const [orderNotes, setOrderNotes] = useState('');
@@ -65,19 +78,34 @@ export function OnlineShopView() {
   }, [selectedCategory]);
 
   useEffect(() => {
+    if (aiSearch) return;
     const t = setTimeout(() => {
       setDebouncedSearch(searchQuery.trim());
       setPage(1);
     }, 180);
     return () => clearTimeout(t);
-  }, [searchQuery]);
+  }, [aiSearch, searchQuery]);
+
+  function enableAiSearch() {
+    setQuestionDraft(searchQuery);
+    setAiMode(true);
+    searchInput.current?.focus();
+  }
+
+  function cancelAiSearch() {
+    setAiMode(false);
+    setSubmittedQuestion(null);
+    searchInput.current?.focus();
+  }
 
   function handleCategoryChange(category: string) {
+    setSubmittedQuestion(null);
     setWorkspaceSubTab('shop', category);
     setPage(1);
   }
 
   function handleSortChange(nextSort: CatalogSort) {
+    setSubmittedQuestion(null);
     setSort(nextSort);
     setPage(1);
   }
@@ -90,8 +118,9 @@ export function OnlineShopView() {
   function openProductDialog(product: Product) {
     const defaultUnit =
       product.units.find((u) => u.is_default) || product.units[0];
+    const availableUnit = product.units.find((unit) => unit.conversion_factor <= product.stock_base);
     setDetailProduct(product);
-    setDialogUnitId(defaultUnit?.id || '');
+    setDialogUnitId(defaultUnit && defaultUnit.conversion_factor <= product.stock_base ? defaultUnit.id : availableUnit?.id || defaultUnit?.id || '');
     setDialogQty(1);
     setDialogAdded(false);
   }
@@ -109,6 +138,37 @@ export function OnlineShopView() {
       return apiRequest<Product[]>(`/shop/products?${params.toString()}`);
     },
   });
+
+  const assistanceQuery = useQuery({
+    queryKey: ['shop-assistance', submittedQuestion],
+    enabled: aiSearch && submittedQuestion !== null,
+    queryFn: async ({ signal }) => (await apiRequest<ShopAssistance>('/shop/assistance', {
+      method: 'POST',
+      signal,
+      body: JSON.stringify(submittedQuestion),
+    })).data,
+    gcTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+
+  function handleSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!aiSearch) {
+      setDebouncedSearch(searchQuery.trim());
+      setPage(1);
+      return;
+    }
+
+    const question = questionDraft.trim();
+    if (!question || assistanceQuery.isFetching) return;
+    if (submittedQuestion?.question === question && submittedQuestion.category === selectedCategory) {
+      void assistanceQuery.refetch();
+    } else {
+      setSubmittedQuestion({ question, category: selectedCategory });
+    }
+  }
 
   const placeOrderMutation = useMutation({
     mutationFn: async () => {
@@ -139,7 +199,12 @@ export function OnlineShopView() {
     },
   });
 
-  const filtered = productsQuery.data?.data || [];
+  const showingAssistance = aiSearch && submittedQuestion !== null;
+  const assistance = showingAssistance ? assistanceQuery.data : undefined;
+  const showingRecommendations = Boolean(assistance && !assistance.fallback);
+  const asking = showingAssistance && assistanceQuery.isFetching;
+  const waitingForConnection = assistanceQuery.fetchStatus === 'paused';
+  const filtered = showingRecommendations ? assistance!.products : productsQuery.data?.data || [];
   const meta = (productsQuery.data?.meta as ShopCatalogMeta | undefined) || {};
   const categories =
     meta.categories ||
@@ -156,17 +221,48 @@ export function OnlineShopView() {
 
       {/* Search Bar & Category Filter Toolbar */}
       <div className="flex flex-col gap-3 rounded-xl border border-[#E2E8E4] bg-white p-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="relative w-full lg:max-w-md">
-          <Search className="pointer-events-none absolute left-3.5 top-2.5 h-4 w-4 text-[#64748B]" />
-          <input
-            type="search"
-            aria-label="Search cooperative supplies by name, SKU, or category"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search fertilizers, seeds, feeds, or SKU..."
-            className="w-full rounded-lg border border-[#CBD5E1] bg-white py-2 pl-10 pr-4 text-sm focus:border-[#15803D] focus:outline-none focus:ring-2 focus:ring-[#15803D]/20"
-          />
-        </div>
+        <form onSubmit={handleSearch} className="w-full space-y-1.5 lg:max-w-lg">
+          <label htmlFor="shop-search" className="block text-sm font-semibold text-[#334155]">
+            {aiSearch ? 'Ask AI about supplies' : 'Search supplies'}
+          </label>
+          <div className="flex gap-2">
+            <div className="relative min-w-0 flex-1">
+              {aiSearch ? (
+                <Sparkles aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#15803D]" />
+              ) : (
+                <Search aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#64748B]" />
+              )}
+              <input id="shop-search" ref={searchInput} type={aiSearch ? 'text' : 'search'} maxLength={400}
+                enterKeyHint={aiSearch ? 'send' : 'search'}
+                aria-describedby={aiSearch ? 'shop-ai-search-hint' : undefined}
+                value={aiSearch ? questionDraft : searchQuery}
+                onChange={(event) => {
+                  const update = aiSearch ? setQuestionDraft : setSearchQuery;
+                  update(event.target.value);
+                }}
+                placeholder={aiSearch ? 'e.g. What chicken feed is in stock?' : 'Search by name or SKU'}
+                className={`min-h-11 w-full rounded-lg border py-2 pl-10 pr-4 text-base sm:text-sm focus:border-[#15803D] focus:outline-none focus:ring-2 focus:ring-[#15803D]/20 ${aiSearch ? 'border-emerald-400 bg-emerald-50' : 'border-[#CBD5E1] bg-white'}`}
+              />
+            </div>
+            {canAsk && (aiSearch ? (
+              <button type="button" onClick={cancelAiSearch} aria-label="Cancel AI search" title="Cancel AI search"
+                className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100">
+                <X aria-hidden="true" className="h-5 w-5" />
+              </button>
+            ) : (
+              <button type="button" onClick={enableAiSearch}
+                className="min-h-11 shrink-0 rounded-lg bg-[#15803D] px-4 text-sm font-semibold text-white hover:bg-[#166534]">
+                Ask AI
+              </button>
+            ))}
+          </div>
+          {aiSearch && (
+            <>
+              <button type="submit" hidden>Send question</button>
+              <p id="shop-ai-search-hint" className="text-xs text-[#475569]">Press Enter or Send to ask.</p>
+            </>
+          )}
+        </form>
 
         <div className="grid min-w-0 gap-2 sm:grid-cols-3 lg:flex lg:items-center">
           <select aria-label="Filter by category" className={SELECT_STYLE} value={selectedCategory}
@@ -216,15 +312,33 @@ export function OnlineShopView() {
         </section>
       ) : null}
 
+      {showingAssistance && (
+        <section aria-label="AI shop assistance" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-display text-base font-semibold text-emerald-950">AI shop assistance</h2>
+            <button type="button" onClick={cancelAiSearch}
+              className="text-sm font-medium text-emerald-900 underline underline-offset-2">
+              Show catalog results
+            </button>
+          </div>
+          <p role="status" className="mt-2 whitespace-pre-line break-words text-sm leading-relaxed text-emerald-950">
+            {waitingForConnection && 'Connect to the internet to get shop assistance.'}
+            {asking && 'Checking current inventory…'}
+            {assistanceQuery.isError && 'Shop assistance is unavailable. You can still search by product name or SKU.'}
+            {!waitingForConnection && !asking && !assistanceQuery.isError && assistance?.explanation}
+          </p>
+        </section>
+      )}
+
       {/* Product Catalog Grid */}
-      {productsQuery.isLoading ? (
+      {asking || (!showingRecommendations && productsQuery.isLoading) ? (
         <LoadingSkeleton rows={6} />
-      ) : productsQuery.isError ? (
+      ) : !showingRecommendations && productsQuery.isError ? (
         <ErrorState
           message={(productsQuery.error as Error).message}
           onRetry={() => productsQuery.refetch()}
         />
-      ) : filtered.length === 0 ? (
+      ) : filtered.length === 0 && !showingRecommendations ? (
         <EmptyState
           title={debouncedSearch ? 'No matching supplies found' : 'No supplies in this category'}
           description={
@@ -233,12 +347,16 @@ export function OnlineShopView() {
               : 'Select another category to view available cooperative inventory.'
           }
         />
-      ) : (
+      ) : filtered.length > 0 && (
         <div className="space-y-5">
+          {showingRecommendations && <h2 className="font-display text-base font-semibold text-slate-900">Recommended supplies</h2>}
           <section className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
             {filtered.map((product) => {
-              const defaultUnit =
+              const preferredUnit =
                 product.units.find((u) => u.is_default) || product.units[0];
+              const defaultUnit = showingRecommendations && preferredUnit && preferredUnit.conversion_factor > product.stock_base
+                ? product.units.find((unit) => unit.conversion_factor <= product.stock_base)
+                : preferredUnit;
 
               return (
                 <article
@@ -263,6 +381,7 @@ export function OnlineShopView() {
                       <h3 className="line-clamp-2 font-display text-sm font-semibold text-[#0F172A]">
                         {product.name}
                       </h3>
+                      {showingRecommendations && <p className="mt-1 text-xs text-[#475569]">{product.stock_base.toLocaleString('en-PH')} {product.base_unit} in stock</p>}
                     </div>
                   </button>
 
@@ -297,7 +416,7 @@ export function OnlineShopView() {
           </section>
 
           {/* Pagination Controls */}
-          <nav
+          {!showingRecommendations && <nav
             aria-label="Product catalog pagination"
             className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#E2E8E4] bg-white px-4 py-3"
           >
@@ -344,7 +463,7 @@ export function OnlineShopView() {
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </div>
-          </nav>
+          </nav>}
         </div>
       )}
 

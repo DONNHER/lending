@@ -15,6 +15,7 @@ Route::middleware('argivit.auth')->group(function () {
         Route::get('documents/{id}/download', 'downloadDocument');
         Route::post('documents/{id}/review', 'reviewDocument')->middleware('argivit.role:admin,manager');
         Route::post('shareholders/{id}/verify', 'verify')->middleware('argivit.role:admin,manager');
+        Route::post('shareholders/{id}/share-capital/payments', 'recordCapitalPayment')->middleware('argivit.role:admin,manager');
         Route::get('share-capital/me', 'capital');
         Route::post('share-capital/payments', 'submitCapitalPayment');
         Route::post('share-capital/{id}/verify-payment', 'verifyCapitalPayment')->middleware('argivit.role:admin,manager');

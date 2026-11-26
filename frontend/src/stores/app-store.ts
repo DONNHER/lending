@@ -116,7 +116,7 @@ export const useAppStore = create<AppState>((set) => ({
   offlineOutbox: getDesktopPosBridge() ? [] : loadOutbox(),
 
   setSession: (session) => {
-    setStoredToken(session?.token ?? null);
+    setStoredToken(session?.token ?? null, session?.session?.remembered);
     saveOfflineCashier(session);
     set((state) => {
       if (!session) {

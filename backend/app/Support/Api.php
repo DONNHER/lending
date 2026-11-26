@@ -41,10 +41,12 @@ final class Api
 
     public static function audit(array $actor, string $action, string $entityType, string $entityId, array $metadata = []): void
     {
+        $id = (string) Str::uuid();
         Sql::run(
             'INSERT INTO audit_logs (id, actor_id, actor_name, action, entity_type, entity_id, metadata_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [(string) Str::uuid(), $actor['id'], $actor['name'], $action, $entityType, $entityId,
+            [$id, $actor['id'], $actor['name'], $action, $entityType, $entityId,
                 json_encode((object) $metadata, JSON_THROW_ON_ERROR), self::now()],
         );
+        NotificationInbox::onAudit($id, $action, $entityId);
     }
 }
