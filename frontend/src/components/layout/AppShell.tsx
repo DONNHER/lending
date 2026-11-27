@@ -137,6 +137,10 @@ export function AppShell({ children, activeWorkspace, loanAccess }: { children: 
   const sidebarContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    setSidebarMode('shop');
+  }, [session?.user.id]);
+
+  useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         setMiniMenuId(null);
@@ -164,8 +168,6 @@ export function AppShell({ children, activeWorkspace, loanAccess }: { children: 
   const { user, impersonated_by } = session;
   const loanPortal = import.meta.env.VITE_ARGIVET_ENTRY === 'loan';
   const totalCartQty = cartItems.reduce((sum, i) => sum + i.quantity, 0);
-  const membershipLabel = loanAccess ? 'Loan' : 'Membership';
-  const MembershipIcon = loanAccess ? Landmark : Users;
   const navItems = user.role === 'shareholder'
     ? NAV_ITEMS.map((item) => item.id === 'shareholders' ? { ...item, label: 'Membership' as const } : item)
     : NAV_ITEMS;
@@ -180,14 +182,14 @@ export function AppShell({ children, activeWorkspace, loanAccess }: { children: 
       ? 'shop'
       : sidebarMode;
   const allowedItems =
-    loanPortal
-      ? baseAllowedItems.filter((item) => item.id === 'loans' || item.id === 'shareholders')
-      : user.role === 'shareholder'
+    user.role === 'shareholder'
       ? baseAllowedItems.filter((item) =>
           effectiveSidebarMode === 'shop'
             ? item.id === 'shop' || item.id === 'orders'
-            : loanAccess && (item.id === 'loans' || item.id === 'shareholders')
+            : item.id === 'loans' || item.id === 'shareholders'
         )
+      : loanPortal
+      ? baseAllowedItems.filter((item) => item.id === 'loans' || item.id === 'shareholders')
       : baseAllowedItems.filter((item) => item.id !== 'profile');
   const activeItem = navItems.find((i) => i.id === activeWorkspace) || allowedItems[0];
   const miniMenuItem =
@@ -293,7 +295,7 @@ export function AppShell({ children, activeWorkspace, loanAccess }: { children: 
           </div>
         </div>
 
-        {!loanPortal && user.role === 'shareholder' ? (
+        {user.role === 'shareholder' ? (
           <div className="px-3 pt-1 pb-2">
             <div
               role="group"
@@ -323,8 +325,8 @@ export function AppShell({ children, activeWorkspace, loanAccess }: { children: 
                     : 'text-emerald-100/85 hover:text-white'
                 }`}
               >
-                <MembershipIcon className="h-3.5 w-3.5 shrink-0" />
-                <span>{t(membershipLabel)}</span>
+                <Landmark className="h-3.5 w-3.5 shrink-0" />
+                <span>{t('Loan')}</span>
               </button>
             </div>
           </div>
@@ -477,7 +479,7 @@ export function AppShell({ children, activeWorkspace, loanAccess }: { children: 
       </div>
 
       <div className="flex flex-1 min-h-0 w-full flex-col items-center overflow-y-auto py-3">
-        {!loanPortal && user.role === 'shareholder' ? (
+        {user.role === 'shareholder' ? (
           <div
             role="group"
             aria-label={t('Switch shareholder workspace')}
@@ -499,8 +501,8 @@ export function AppShell({ children, activeWorkspace, loanAccess }: { children: 
             </button>
             <button
               type="button"
-              aria-label={t(loanAccess ? 'Loan mode' : 'Membership')}
-              title={t(membershipLabel)}
+              aria-label={t('Loan mode')}
+              title={t('Loan')}
               aria-pressed={effectiveSidebarMode === 'loan'}
               onClick={() => handleSidebarModeChange('loan')}
               className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
@@ -509,7 +511,7 @@ export function AppShell({ children, activeWorkspace, loanAccess }: { children: 
                   : 'text-emerald-100/85 hover:bg-white/10 hover:text-white'
               }`}
             >
-              <MembershipIcon className="h-4 w-4" />
+              <Landmark className="h-4 w-4" />
             </button>
           </div>
         ) : null}

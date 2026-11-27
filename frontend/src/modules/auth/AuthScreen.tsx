@@ -1,11 +1,13 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { ArrowRight, Leaf, ShieldCheck, Store, UserCheck } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Leaf, ShieldCheck } from 'lucide-react';
 import { apiRequest, ApiError } from '../../lib/api';
-import { STORE_HERO_IMAGE } from '../../lib/productAssets';
 import { useAppStore } from '../../stores/app-store';
 import type { AuthSession } from '../../types/domain';
+import { AuthShowcasePanel } from './AuthShowcasePanel';
 import { PasswordRecoveryView } from './PasswordRecoveryView';
 import { getDesktopPosBridge } from '../../lib/posOffline';
+
+export type AuthPortal = 'admin' | 'cashier' | 'online-shop';
 
 const DEMO_ACCOUNTS = [
   {
@@ -41,8 +43,15 @@ interface EmailChallenge {
   expires_in: number;
 }
 
-export function AuthScreen() {
+export function AuthScreen({
+  portal = 'online-shop',
+  onBackToPortal,
+}: {
+  portal?: AuthPortal;
+  onBackToPortal?: () => void;
+}) {
   const setSession = useAppStore((s) => s.setSession);
+  const allowRegistration = portal === 'online-shop';
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -186,65 +195,42 @@ export function AuthScreen() {
     );
   }
 
+  const portalMeta = {
+    admin: {
+      title: 'Admin login',
+      subtitle: 'Sign in to cooperative administration, inventory, approvals, and governance.',
+    },
+    cashier: {
+      title: 'Cashier POS login',
+      subtitle: 'Sign in to operate the POS register, offline queue, and pre-order pickup.',
+    },
+    'online-shop': {
+      title: mode === 'login' ? 'Online Shop sign in' : 'New shareholder registration',
+      subtitle:
+        mode === 'login'
+          ? 'Sign in to browse the cooperative online shop, orders, and member loans.'
+          : 'Public accounts default to Shareholder membership and require manager verification.',
+    },
+  }[portal];
+
   return (
     <div className="min-h-screen bg-[#F7F9F8] text-[#0F172A] lg:grid lg:grid-cols-12">
-      {/* Left Cooperative Showcase Column */}
-      <div className="relative hidden flex-col justify-between bg-[#14532D] p-10 text-white lg:col-span-6 lg:flex">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/15">
-            <Leaf className="h-5 w-5 text-emerald-200" />
-          </div>
-          <span className="font-display text-xl font-bold tracking-tight">Argivit Store</span>
-        </div>
-
-        <div className="my-auto max-w-xl space-y-6">
-          <div className="overflow-hidden rounded-xl border border-white/15 bg-black/20">
-            <img
-              src={STORE_HERO_IMAGE}
-              alt="Argivit Cooperative Supply Store and Warehouse"
-              referrerPolicy="no-referrer"
-              className="h-64 w-full object-cover"
-            />
-          </div>
-
-          <div className="space-y-3">
-            <h1 className="font-display text-3xl font-bold leading-tight text-white">
-              Cooperative Retail, Inventory & Shareholder Credit in One Ledger
-            </h1>
-            <p className="text-sm leading-relaxed text-emerald-100/90">
-              Built for agricultural supply cooperatives with dual-unit sack/kilogram stock control,
-              offline-resilient POS synchronization, verified fixed share capital, and 6× capital-backed
-              member loans.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-3 gap-4 border-t border-white/15 pt-5 text-xs text-emerald-100">
-            <div>
-              <Store className="mb-1.5 h-4 w-4 text-emerald-300" />
-              <div className="font-semibold text-white">Hybrid POS</div>
-              <div className="mt-0.5 text-emerald-200/80">Outbox queue & idempotent sync</div>
-            </div>
-            <div>
-              <UserCheck className="mb-1.5 h-4 w-4 text-emerald-300" />
-              <div className="font-semibold text-white">Verified Capital</div>
-              <div className="mt-0.5 text-emerald-200/80">Immutable payment records</div>
-            </div>
-            <div>
-              <ShieldCheck className="mb-1.5 h-4 w-4 text-emerald-300" />
-              <div className="font-semibold text-white">Loan State Engine</div>
-              <div className="mt-0.5 text-emerald-200/80">6× ceiling & installment rules</div>
-            </div>
-          </div>
-        </div>
-
-        <p className="text-xs text-emerald-200/75">
-          Argivit Agricultural Supply Cooperative · Authoritative Transaction & Inventory System
-        </p>
-      </div>
+      <AuthShowcasePanel />
 
       {/* Right Authentication Form Column */}
       <div className="flex flex-col justify-center px-6 py-10 sm:px-12 lg:col-span-6">
         <div className="mx-auto w-full max-w-md space-y-7">
+          {onBackToPortal ? (
+            <button
+              type="button"
+              onClick={onBackToPortal}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#15803D] hover:text-[#166534]"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Back to portal selection
+            </button>
+          ) : null}
+
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 lg:hidden">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#15803D] text-white">
@@ -253,48 +239,48 @@ export function AuthScreen() {
               <span className="font-display text-lg font-bold text-[#0F172A]">Argivit Store</span>
             </div>
 
-            <div className="inline-flex rounded-lg border border-[#E2E8E4] bg-white p-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('login');
-                  setErrorMsg(null);
-                }}
-                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${
-                  mode === 'login'
-                    ? 'bg-[#15803D] text-white'
-                    : 'text-[#475569] hover:text-[#0F172A]'
-                }`}
-              >
-                Sign In
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('register');
-                  setErrorMsg(null);
-                  setEmail('');
-                  setPassword('');
-                }}
-                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${
-                  mode === 'register'
-                    ? 'bg-[#15803D] text-white'
-                    : 'text-[#475569] hover:text-[#0F172A]'
-                }`}
-              >
-                Register Shareholder
-              </button>
-            </div>
+            {allowRegistration ? (
+              <div className="inline-flex rounded-lg border border-[#E2E8E4] bg-white p-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('login');
+                    setErrorMsg(null);
+                  }}
+                  className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${
+                    mode === 'login'
+                      ? 'bg-[#15803D] text-white'
+                      : 'text-[#475569] hover:text-[#0F172A]'
+                  }`}
+                >
+                  Sign In
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('register');
+                    setErrorMsg(null);
+                    setEmail('');
+                    setPassword('');
+                  }}
+                  className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${
+                    mode === 'register'
+                      ? 'bg-[#15803D] text-white'
+                      : 'text-[#475569] hover:text-[#0F172A]'
+                  }`}
+                >
+                  Register Shareholder
+                </button>
+              </div>
+            ) : null}
           </div>
 
           <div>
             <h2 className="font-display text-2xl font-bold text-[#0F172A]">
-              {mode === 'login' ? 'Sign in to your workspace' : 'New shareholder registration'}
+              {portalMeta.title}
             </h2>
             <p className="mt-1 text-sm text-[#475569]">
-              {mode === 'login'
-                ? 'Access role-scoped cooperative operations, POS, and member credit.'
-                : 'Public accounts default to Shareholder membership and require manager verification.'}
+              {portalMeta.subtitle}
             </p>
           </div>
 

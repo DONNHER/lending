@@ -122,10 +122,16 @@ export const useAppStore = create<AppState>((set) => ({
       if (!session) {
         return { session: null, activeWorkspace: 'dashboard', subTabs: { ...DEFAULT_SUB_TABS } };
       }
-      const nextWorkspace = canAccessWorkspace(session.user.role, state.activeWorkspace)
-        ? state.activeWorkspace
-        : getDefaultWorkspaceForRole(session.user.role);
-      return { session, activeWorkspace: nextWorkspace };
+      const isSameUser = state.session?.user.id === session.user.id;
+      const nextWorkspace =
+        isSameUser && canAccessWorkspace(session.user.role, state.activeWorkspace)
+          ? state.activeWorkspace
+          : getDefaultWorkspaceForRole(session.user.role);
+      return {
+        session,
+        activeWorkspace: nextWorkspace,
+        ...(isSameUser ? {} : { subTabs: { ...DEFAULT_SUB_TABS } }),
+      };
     });
   },
 

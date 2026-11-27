@@ -5,8 +5,9 @@ import { EmptyState, LoadingSkeleton } from './components/ui/StateViews';
 import { ApiError, apiRequest, getStoredToken } from './lib/api';
 import { isPosConnectionError, loadOfflineCashier } from './lib/posOffline';
 import { SettingsView } from './modules/admin/SettingsView';
-import { AuthScreen } from './modules/auth/AuthScreen';
+import { AuthScreen, type AuthPortal } from './modules/auth/AuthScreen';
 import { PasswordRecoveryView, readPasswordResetToken } from './modules/auth/PasswordRecoveryView';
+import { PortalScreen, type PortalRoute } from './modules/auth/PortalScreen';
 import { SessionGuard } from './modules/auth/SessionGuard';
 import { DashboardView } from './modules/dashboard/DashboardView';
 import { InventoryView } from './modules/inventory/InventoryView';
@@ -31,10 +32,33 @@ const queryClient = new QueryClient({
   },
 });
 
+const ROUTE_PORTALS: Record<string, AuthPortal> = {
+  '/admin-login': 'admin',
+  '/cashier': 'cashier',
+  '/online-shop': 'online-shop',
+  '/login': 'online-shop',
+  '/register': 'online-shop',
+};
+
 function ArgivitRouter() {
   const { session, activeWorkspace, offlineMode, setOfflineMode, setSession, logout } = useAppStore();
   const [booting, setBooting] = useState(Boolean(getStoredToken()));
   const [resetToken, setResetToken] = useState(readPasswordResetToken);
+  const [pathname, setPathname] = useState(() => window.location.pathname || '/');
+
+  const navigate = useCallback((to: '/' | PortalRoute) => {
+    if (window.location.pathname !== to) {
+      window.history.pushState(null, '', to);
+    }
+    setPathname(to);
+  }, []);
+
+  useEffect(() => {
+    const onPopState = () => setPathname(window.location.pathname || '/');
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
   const expireSession = useCallback(() => {
     queryClient.clear();
     logout();
@@ -100,13 +124,17 @@ function ArgivitRouter() {
   }
 
   if (!session) {
-    return <AuthScreen />;
+    const selectedPortal = ROUTE_PORTALS[pathname];
+    if (!selectedPortal) {
+      return <PortalScreen onSelectPortal={navigate} />;
+    }
+    return <AuthScreen key={selectedPortal} portal={selectedPortal} onBackToPortal={() => navigate('/')} />;
   }
 
   const loanAccess = session.user.role !== 'shareholder' || (!membership.isError && membership.data?.loan_access === true);
   const loanPortal = import.meta.env.VITE_ARGIVET_ENTRY === 'loan';
   let workspace = offlineMode && session.user.role === 'cashier' ? 'pos' : activeWorkspace;
-  if (loanPortal && !['loans', 'shareholders', 'profile'].includes(workspace)) {
+  if (loanPortal && session.user.role !== 'shareholder' && !['loans', 'shareholders', 'profile'].includes(workspace)) {
     workspace = session.user.role === 'cashier' ? 'profile' : 'shareholders';
   }
   if (workspace === 'loans' && !loanAccess) workspace = 'shareholders';
