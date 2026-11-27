@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-quer
 import { AppShell } from './components/layout/AppShell';
 import { EmptyState, LoadingSkeleton } from './components/ui/StateViews';
 import { ApiError, apiRequest, getStoredToken } from './lib/api';
-import { isPosConnectionError, loadOfflineCashier } from './lib/posOffline';
+import { getDesktopPosBridge, isPosConnectionError, loadOfflineCashier } from './lib/posOffline';
 import { SettingsView } from './modules/admin/SettingsView';
 import { AuthScreen, type AuthPortal } from './modules/auth/AuthScreen';
 import { PasswordRecoveryView, readPasswordResetToken } from './modules/auth/PasswordRecoveryView';
@@ -34,6 +34,7 @@ const queryClient = new QueryClient({
 
 const ROUTE_PORTALS: Record<string, AuthPortal> = {
   '/admin-login': 'admin',
+  '/manager': 'manager',
   '/cashier': 'cashier',
   '/online-shop': 'online-shop',
   '/login': 'online-shop',
@@ -124,6 +125,9 @@ function ArgivitRouter() {
   }
 
   if (!session) {
+    if (getDesktopPosBridge()) {
+      return <AuthScreen key="cashier" portal="cashier" />;
+    }
     const selectedPortal = ROUTE_PORTALS[pathname];
     if (!selectedPortal) {
       return <PortalScreen onSelectPortal={navigate} />;

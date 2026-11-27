@@ -1,7 +1,7 @@
-import { ArrowRight, ShieldCheck, ShoppingBag, Store } from 'lucide-react';
+import { ArrowRight, Briefcase, ShieldCheck, ShoppingBag } from 'lucide-react';
 import { AuthShowcasePanel } from './AuthShowcasePanel';
 
-export type PortalRoute = '/admin-login' | '/cashier' | '/online-shop';
+export type PortalRoute = '/admin-login' | '/manager' | '/online-shop';
 
 const PORTALS: Array<{
   route: PortalRoute;
@@ -16,10 +16,10 @@ const PORTALS: Array<{
     icon: ShieldCheck,
   },
   {
-    route: '/cashier',
-    label: 'Cashier',
-    description: 'POS terminal, offline sync & pre-order pickup',
-    icon: Store,
+    route: '/manager',
+    label: 'Manager',
+    description: 'Approvals, inventory, loan underwriting & reports',
+    icon: Briefcase,
   },
   {
     route: '/online-shop',

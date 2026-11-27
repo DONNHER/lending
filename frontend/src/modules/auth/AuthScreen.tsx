@@ -7,7 +7,7 @@ import { AuthShowcasePanel } from './AuthShowcasePanel';
 import { PasswordRecoveryView } from './PasswordRecoveryView';
 import { getDesktopPosBridge } from '../../lib/posOffline';
 
-export type AuthPortal = 'admin' | 'cashier' | 'online-shop';
+export type AuthPortal = 'admin' | 'manager' | 'cashier' | 'online-shop';
 
 const DEMO_ACCOUNTS = [
   {
@@ -199,6 +199,10 @@ export function AuthScreen({
     admin: {
       title: 'Admin login',
       subtitle: 'Sign in to cooperative administration, inventory, approvals, and governance.',
+    },
+    manager: {
+      title: 'Manager login',
+      subtitle: 'Sign in to review memberships, approve loans, manage inventory, and view reports.',
     },
     cashier: {
       title: 'Cashier POS login',
