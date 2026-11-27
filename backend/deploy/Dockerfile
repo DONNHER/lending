@@ -18,7 +18,7 @@ RUN mkdir -p storage/framework/cache/data storage/framework/sessions storage/fra
     && composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader \
     && chown -R www-data:www-data storage bootstrap/cache \
     && sed -i 's@DocumentRoot /var/www/html@DocumentRoot /srv/argivet/public@' /etc/apache2/sites-available/000-default.conf \
-    && printf '%s\n' '<Directory /srv/argivet/public>' 'Require all granted' 'FallbackResource /index.php' 'Options -Indexes' '</Directory>' > /etc/apache2/conf-enabled/argivet.conf \
+    && printf '%s\n' '<Directory /srv/argivet/public>' 'Require all granted' 'CGIPassAuth On' 'FallbackResource /index.php' 'Options -Indexes' '</Directory>' > /etc/apache2/conf-enabled/argivet.conf \
     && printf '%s\n' 'upload_max_filesize=12M' 'post_max_size=15M' 'expose_php=Off' > /usr/local/etc/php/conf.d/argivet.ini
 ARG APP_VERSION=dev
 ENV APP_VERSION=$APP_VERSION
@@ -31,7 +31,6 @@ RUN npm ci
 COPY frontend/index.html frontend/tsconfig.json frontend/vite.config.ts ./
 COPY frontend/src src
 COPY frontend/public public
-ENV VITE_ARGIVET_ENTRY=loan
 RUN npm run build
 
 FROM nginx:alpine AS loan
