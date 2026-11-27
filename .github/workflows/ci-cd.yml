@@ -40,7 +40,7 @@ jobs:
         working-directory: frontend
       - run: npm run lint && npm test && npm run test:desktop && npm run build
         working-directory: frontend
-      - run: bash -n backend/deploy/deploy.sh
+      - run: bash -n backend/deploy/deploy.sh && bash -n backend/deploy/tunnel-watchdog.sh
 
 
       - name: Build and package deployment images
@@ -63,6 +63,8 @@ jobs:
     needs: test
     if: github.repository == 'DONNHER/Agrivet_Ledger' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, Linux, X64, agrivet-deploy]
+    permissions:
+      contents: write
     environment: production
     concurrency:
       group: agrivet-production
@@ -116,3 +118,7 @@ jobs:
             journalctl --user -u agrivet-frontend-dev -n 30 --no-pager >&2 || true
             exit 1
           fi
+      - name: Verify public tunnel and publish live URL
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash backend/deploy/tunnel-watchdog.sh

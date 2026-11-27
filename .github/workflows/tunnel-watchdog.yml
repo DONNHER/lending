@@ -1,0 +1,26 @@
+name: Tunnel Watchdog
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  keep-tunnel-alive:
+    if: github.repository == 'DONNHER/Agrivet_Ledger'
+    runs-on: [self-hosted, Linux, X64, agrivet-deploy]
+    concurrency:
+      group: agrivet-tunnel-watchdog
+      cancel-in-progress: false
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check tunnel health, rotate if expired, and update permanent URL + Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash backend/deploy/tunnel-watchdog.sh
