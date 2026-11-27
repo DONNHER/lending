@@ -56,9 +56,9 @@ fi
 extract_url() {
   local since_flag="${1:-}"
   if [[ -n "$since_flag" ]]; then
-    docker logs --since "$since_flag" "$tunnel_container" 2>&1 | grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' | tail -n 1 || true
+    docker logs --since "$since_flag" "$tunnel_container" 2>&1 | grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' | grep -v '^https://api\.trycloudflare\.com$' | tail -n 1 || true
   else
-    docker logs "$tunnel_container" 2>&1 | grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' | tail -n 1 || true
+    docker logs "$tunnel_container" 2>&1 | grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' | grep -v '^https://api\.trycloudflare\.com$' | tail -n 1 || true
   fi
 }
 
@@ -83,7 +83,7 @@ if [[ "$tunnel_healthy" -ne 1 ]]; then
   live_url=""
   for _ in $(seq 1 40); do
     logs="$(docker logs --since "$restart_ts" "$tunnel_container" 2>&1 || true)"
-    candidate="$(printf '%s\n' "$logs" | grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' | tail -n 1 || true)"
+    candidate="$(printf '%s\n' "$logs" | grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' | grep -v '^https://api\.trycloudflare\.com$' | tail -n 1 || true)"
     if [[ -n "$candidate" ]] && printf '%s\n' "$logs" | grep -Fq 'Registered tunnel connection'; then
       live_url="$candidate"
       break
