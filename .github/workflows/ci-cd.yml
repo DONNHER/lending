@@ -79,3 +79,40 @@ jobs:
         run: docker load -i agrivet-images.tar.gz
       - name: Deploy and verify exact commit on both entry points
         run: bash backend/deploy/deploy.sh "$GITHUB_SHA" prebuilt
+      - name: Sync Kali checkout and restart frontend
+        run: |
+          set -Eeuo pipefail
+          target="$HOME/Agrivet_Ledger"
+          if [ -d "$target/.git" ]; then
+            git -C "$target" fetch --depth=1 origin "$GITHUB_SHA"
+            git -C "$target" checkout --force "$GITHUB_SHA"
+          else
+            rm -rf "$target"
+            git clone --depth=1 https://github.com/DONNHER/Agrivet_Ledger.git "$target"
+            git -C "$target" fetch --depth=1 origin "$GITHUB_SHA"
+            git -C "$target" checkout --force "$GITHUB_SHA"
+          fi
+
+          lock_hash="$(sha256sum "$target/frontend/package-lock.json" | awk '{print $1}')"
+          hash_file="$target/frontend/node_modules/.package-lock.sha256"
+          if [ ! -d "$target/frontend/node_modules" ] || [ "$(cat "$hash_file" 2>/dev/null || true)" != "$lock_hash" ]; then
+            (cd "$target/frontend" && PATH="$HOME/.local/argivet-node/bin:$PATH" ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci)
+            printf '%s\n' "$lock_hash" > "$hash_file"
+          fi
+
+          uid="$(id -u)"
+          export XDG_RUNTIME_DIR="/run/user/$uid"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus"
+          if systemctl --user list-unit-files agrivet-frontend-dev.service >/dev/null 2>&1; then
+            systemctl --user restart agrivet-frontend-dev
+            for _ in $(seq 1 30); do
+              if curl -fsS http://127.0.0.1:5173/api/v1/health | grep -Fq '"status":"online"'; then
+                echo "Verified agrivet-frontend-dev is online at commit $GITHUB_SHA"
+                exit 0
+              fi
+              sleep 1
+            done
+            echo "agrivet-frontend-dev failed health check after restart." >&2
+            journalctl --user -u agrivet-frontend-dev -n 30 --no-pager >&2 || true
+            exit 1
+          fi

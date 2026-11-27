@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { ArrowLeft, ArrowRight, Leaf, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ShieldCheck } from 'lucide-react';
 import { apiRequest, ApiError } from '../../lib/api';
 import { useAppStore } from '../../stores/app-store';
 import type { AuthSession } from '../../types/domain';
@@ -214,30 +214,23 @@ export function AuthScreen({
   }[portal];
 
   return (
-    <div className="min-h-screen bg-[#F7F9F8] text-[#0F172A] lg:grid lg:grid-cols-12">
+    <div className="flex min-h-screen flex-col bg-[#F7F9F8] text-[#0F172A] lg:grid lg:grid-cols-12">
       <AuthShowcasePanel />
 
       {/* Right Authentication Form Column */}
-      <div className="flex flex-col justify-center px-6 py-10 sm:px-12 lg:col-span-6">
-        <div className="mx-auto w-full max-w-md space-y-7">
-          {onBackToPortal ? (
-            <button
-              type="button"
-              onClick={onBackToPortal}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#15803D] hover:text-[#166534]"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Back to portal selection
-            </button>
-          ) : null}
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 lg:hidden">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#15803D] text-white">
-                <Leaf className="h-4 w-4" />
-              </div>
-              <span className="font-display text-lg font-bold text-[#0F172A]">Argivit Store</span>
-            </div>
+      <main className="flex flex-1 flex-col justify-center px-5 py-8 sm:px-8 sm:py-10 lg:col-span-6 lg:px-10 xl:px-14">
+        <div className="mx-auto w-full max-w-md space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {onBackToPortal ? (
+              <button
+                type="button"
+                onClick={onBackToPortal}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#15803D] hover:text-[#166534]"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                Back to portal selection
+              </button>
+            ) : <span />}
 
             {allowRegistration ? (
               <div className="inline-flex rounded-lg border border-[#E2E8E4] bg-white p-1">
@@ -454,7 +447,7 @@ export function AuthScreen({
             </div>
           ) : null}
         </div>
-      </div>
+      </main>
     </div>
   );
 }
